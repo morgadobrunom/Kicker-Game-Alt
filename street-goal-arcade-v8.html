@@ -128,14 +128,15 @@ let restartLockUntil = 0;
 
 const player = { x: world.w/2, y: world.h*0.78, r: 15, speed: 218,
                  face: -Math.PI/2, moving: false, mag: 0, animT: 0,
-                 spriteScale: 1, targetScale: 1 };
+                 visualScale: 1 };
 const ball = { x: world.w/2, y: world.h*0.5, z: 0, r: 9,
                vx: 0, vy: 0, vz: 0, spin: 0, state: 'free', stealGrace: 0 };
 // Dribble state: each touch pushes the ball forward and briefly breaks possession.
 let drip = { armed: false, wait: 0, cooldown: 0, recoil: 0 };
 
 const keeper = { x: world.w/2, y: 30, r: 15, homeX: world.w/2, phase: 0,
-                 animT: 0, lunge: 0, lungeVx: 0, cooldown: 0, holdT: 0 };
+                 animT: 0, lunge: 0, lungeVx: 0, cooldown: 0, holdT: 0,
+                 visualScale: 1 };
 const KEEPER_LUNGE_SPEED = 180;
 const KEEPER_TRACK_SPEED = 45;
 const KEEPER_HOLD_TIME = 1.1;
@@ -214,13 +215,10 @@ function startRound(lv){
   timerEl.classList.remove('low');
   player.x = world.w/2; player.y = world.h*0.78; player.face = -Math.PI/2;
   player.moving = false; player.animT = 0;
-  // Initialize sprite scale to the current target so the player doesn't shrink from a default size.
-  const rawScale = toScreen(player.x, player.y).s;
-  const norm = Math.max(0.1, Math.min(1, rawScale / gNearScale));
-  player.spriteScale = 0.82 + 0.18 * norm;
-  player.targetScale = player.spriteScale;
+  player.visualScale = toScreen(player.x, player.y).s;
   drip.cooldown = 0; drip.recoil = 0;
   keeper.x = keeper.homeX; keeper.y = 26; keeper.phase = 0;
+  keeper.visualScale = toScreen(keeper.x, keeper.y).s;
   keeper.lunge = 0; keeper.cooldown = 0; keeper.holdT = 0; keeper.animT = 0;
   lastSector = -1;
   respawnBall();
@@ -442,6 +440,9 @@ function onGoal(){
 // ---------- Keeper (Level 2) ----------
 function updateKeeper(dt){
   keeper.animT += dt;
+  // Smooth keeper sprite scale to match perspective without pixel-size jumps.
+  const keeperRawS = toScreen(keeper.x, keeper.y).s;
+  keeper.visualScale += (keeperRawS - keeper.visualScale) * 16 * dt;
   if (keeper.cooldown > 0) keeper.cooldown -= dt;
   if (keeper.lunge > 0) keeper.lunge -= dt;
 
@@ -554,13 +555,9 @@ function update(dt){
   player.y = Math.max(player.r, Math.min(world.h - player.r, player.y));
   player.animT += dt * (player.moving ? (0.6 + player.mag) : 0.35);
 
-  // Smooth the player sprite scale — follow natural perspective (big near camera,
-  // small near goal). v7 fixes the v5/v6 inversion that divided by rawScale.
+  // Smooth sprite scale toward true perspective — no extra multiplier, no pixel rounding.
   const rawScale = toScreen(player.x, player.y).s;
-  const norm = Math.max(0.1, Math.min(1, rawScale / gNearScale));
-  // Small range tweak on top of perspective: ~0.82x at goal, ~1.0x at near edge.
-  player.targetScale = 0.82 + 0.18 * norm;
-  player.spriteScale += (player.targetScale - player.spriteScale) * 12 * dt;
+  player.visualScale += (rawScale - player.visualScale) * 16 * dt;
 
   if (ball.state === 'held'){
     if (player.moving && drip.armed && drip.cooldown <= 0){ doDribbleTouch(); }
@@ -772,29 +769,22 @@ function facingName(ang){
   return 'left';
 }
 
-function drawSprite(wx, wy, animT, moving, face, scale, kitColor){
+function drawSprite(wx, wy, animT, moving, face, visualS){
   const p = toScreen(wx, wy);
-  const s = p.s * scale;
-  const u = Math.max(1, Math.round(2.2 * s));      // chunky pixel size, snapped
+  const s = visualS;
+  const u = Math.max(1, 2.2 * s);               // fractional — no Math.round snap
   const movingFast = moving;
   const frame = !movingFast ? 'stand'
     : (Math.floor(animT * 8) % 2 === 0 ? 'runA' : 'runB');
   const img = spriteFor(frame, facingName(face));
   const dw = SPR_W * u, dh = SPR_H * u;
-  const dx = Math.round(p.x - dw / 2), dy = Math.round(p.y - dh);
+  const dx = p.x - dw / 2, dy = p.y - dh;
 
-  groundEllipse(wx, wy, 11 * scale);
+  groundEllipse(wx, wy, 11 * (s / gNearScale));
   ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fill();
 
-  // Recolor kit if a custom color is set.
-  if (kitColor){
-    // cheap tint: draw sprite, then overlay kit color on body band
-    ctx.drawImage(img, dx, dy, dw, dh);
-    ctx.globalCompositeOperation = 'source-atop';
-    ctx.globalCompositeOperation = 'source-over';
-  } else {
-    ctx.drawImage(img, dx, dy, dw, dh);
-  }
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, dx, dy, dw, dh);
   return { p, u, dx, dy, dw, dh };
 }
 
@@ -932,7 +922,7 @@ function draw(){
   for (const e of ents) e.fn();
 
   function drawPlayer(){
-    const d = drawSprite(player.x, player.y, player.animT, player.moving, player.face, player.spriteScale);
+    const d = drawSprite(player.x, player.y, player.animT, player.moving, player.face, player.visualScale);
     // Possession ring only when the ball is truly held.
     if (ball.state === 'held'){
       groundEllipse(player.x, player.y, player.r * 1.5);
@@ -952,10 +942,7 @@ function draw(){
 
   function drawKeeper(){
     const flash = keeperFlash === 1;
-    const rawScale = toScreen(keeper.x, keeper.y).s;
-    const norm = Math.max(0.1, Math.min(1, rawScale / gNearScale));
-    const kScale = 0.82 + 0.18 * norm;
-    const d = drawSprite(keeper.x, keeper.y, keeper.animT, true, Math.PI / 2, kScale);
+    const d = drawSprite(keeper.x, keeper.y, keeper.animT, true, Math.PI / 2, keeper.visualScale);
     // Gloves / keeper cue
     ctx.beginPath();
     ctx.arc(d.p.x, d.dy + d.dh * 0.42, 5 * d.u * 0.5 + 4, 0, Math.PI * 2);
