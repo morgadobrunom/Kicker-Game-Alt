@@ -42,7 +42,7 @@
   #overlay h1{font-size:34px;letter-spacing:3px;font-weight:800}
   #overlay .big{font-size:56px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums}
   #overlay p{font-size:14px;opacity:.78;line-height:1.6;max-width:330px}
-  #levels{display:flex;gap:12px;margin-top:6px}
+  #levels{display:flex;flex-wrap:wrap;gap:12px;margin-top:6px;max-width:100%;justify-content:center}
   .lv{pointer-events:auto;cursor:pointer;border:2px solid rgba(240,246,235,.35);
     background:rgba(240,246,235,.08);color:var(--chalk);border-radius:12px;
     padding:12px 16px;font-size:14px;font-weight:800;letter-spacing:1px;min-width:118px}
@@ -59,7 +59,6 @@
   <div class="hud-item"><div class="hud-label">TIME</div><div class="hud-value" id="timer">30</div></div>
 </div>
 <div id="msg">GOAL!</div>
-<button id="boost" style="position:fixed;bottom:90px;right:18px;width:72px;height:72px;border-radius:50%;border:2px solid #fff;background:#e5484d;color:#fff;font-weight:800;font-size:14px;letter-spacing:1px;pointer-events:auto;opacity:1;transition:opacity .2s,transform .15s,background .2s;z-index:20;box-shadow:0 4px 16px rgba(0,0,0,.4)">BOOST</button>
 <div id="overlay">
   <h1>STREET GOAL</h1>
   <div class="big" id="ov-score" style="display:none">0</div>
@@ -138,6 +137,7 @@ let restartLockUntil = 0;
 let scoreChase = { target: 5, active: false, bestTime: [0, 0, 0, 0] }; // per-target best times
 let boost = { available: true, active: false, timer: 0, multiplier: 1.55 };
 let tutorial = { step: 0, done: false, hint: '' };
+let powerUp = { active: false, x: 0, y: 0, r: 12, spawnT: 0 };
 
 const player = { x: world.w/2, y: world.h*0.78, r: 15, speed: 252,
                  face: -Math.PI/2, moving: false, mag: 0, animT: 0,
@@ -298,6 +298,7 @@ function startRound(lv, target){
   lastSector = -1;
   lastTickSecond = -1;
   boost.available = true; boost.active = false; boost.timer = 0;
+  powerUp.active = false; powerUp.spawnT = 0;
   updateBoostButton();
   if (lv === 0) startTutorial();
   else respawnBall();
@@ -331,10 +332,15 @@ function endRound(){
     ovScore.style.display = 'block';
     ovScore.textContent = finalTime.toFixed(2) + 's';
   } else {
-    const isBest = score > best[level];
-    if (isBest){ best[level] = score; bestEl.textContent = Math.max(best[1], best[2]); }
-    ovTitle.textContent = isBest && score > 0 ? 'NEW BEST!' : "TIME'S UP";
-    ovSub.innerHTML = 'Level ' + level + ' best this session: <b>' + best[level] + '</b>';
+    const isBest = level > 0 && score > best[level];
+    if (isBest){ best[level] = score; bestEl.textContent = Math.max(best[1], best[2], best[3]); }
+    if (level === 0){
+      ovTitle.textContent = tutorial.done ? 'TUTORIAL DONE' : "TIME'S UP";
+      ovSub.innerHTML = 'Learned the basics. Pick a real level to play.';
+    } else {
+      ovTitle.textContent = isBest && score > 0 ? 'NEW BEST!' : "TIME'S UP";
+      ovSub.innerHTML = 'Level ' + level + ' best this session: <b>' + best[level] + '</b>';
+    }
     ovScore.style.display = 'block';
     ovScore.textContent = score;
   }
@@ -374,28 +380,18 @@ overlay.addEventListener('click', () => {
     ovHint.textContent = 'TAP A LEVEL TO PLAY';
   }
 });
-const boostBtn = document.getElementById('boost');
 function updateBoostButton(){
-  if (!boost.available){
-    boostBtn.style.opacity = '0.25';
-    boostBtn.textContent = boost.active ? boost.timer.toFixed(1) : 'USED';
-  } else {
-    boostBtn.style.opacity = '1';
-    boostBtn.textContent = 'BOOST';
-  }
+  // No button in v13; power-up is picked up on the field. This function is kept
+  // as a no-op hook for any future UI additions.
 }
-boostBtn.addEventListener('click', e => {
-  e.stopPropagation();
-  if (gameState !== 'playing' || !boost.available || boost.active) return;
+function activateBoost(){
   boost.available = false; boost.active = true; boost.timer = 5.0;
-  updateBoostButton();
   if (navigator.vibrate) navigator.vibrate(25);
-});
+}
 bestEl.textContent = '0';
 // Show level 1/2/3 buttons, hide target picker on first load.
 levelsEl.style.display = 'flex';
 targetPickEl.style.display = 'none';
-updateBoostButton();
 
 // ---------- Audio (Web Audio, unlocked on first gesture) ----------
 let AC = null;
@@ -654,6 +650,44 @@ function updateTutorial(){
   }
 }
 
+// ---------- Power-up (pick-up boost) ----------
+function updatePowerUp(dt){
+  if (!powerUp.active){
+    powerUp.spawnT -= dt;
+    if (powerUp.spawnT <= 0 && gameState === 'playing' && !boost.active && boost.available){
+      spawnPowerUp();
+    }
+    return;
+  }
+  const d = Math.hypot(player.x - powerUp.x, player.y - powerUp.y);
+  if (d < player.r + powerUp.r + 4){
+    powerUp.active = false;
+    activateBoost();
+  }
+}
+function spawnPowerUp(){
+  const margin = 40;
+  powerUp.x = margin + Math.random() * (world.w - margin * 2);
+  powerUp.y = world.h * 0.25 + Math.random() * (world.h * 0.55);
+  powerUp.active = true;
+  powerUp.spawnT = 0;
+}
+
+function drawPowerUp(){
+  if (!powerUp.active) return;
+  const p = toScreen(powerUp.x, powerUp.y);
+  const r = powerUp.r * p.s;
+  const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 140);
+  ctx.beginPath(); ctx.arc(p.x, p.y, r * (1 + 0.15 * pulse), 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,224,138,' + (0.55 + 0.25 * pulse).toFixed(3) + ')';
+  ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.font = '700 ' + Math.max(8, 10 * p.s) + 'px -apple-system,sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fff';
+  ctx.fillText('⚡', p.x, p.y + 1 * p.s);
+}
+
 // ---------- Keeper (Level 2) ----------
 function updateKeeper(dt){
   keeper.animT += dt;
@@ -726,9 +760,9 @@ function updateKeeper(dt){
         ball.stealGrace = 0.15;
         return;
       }
-      ball.vy = Math.max(120, Math.abs(ball.vy) * 0.62 + 90);   // parry back downfield
-      ball.y = Math.max(ball.y, keeper.y + 10);                  // keep it out of the goal line
-      ball.vx = (ball.x - keeper.x) * 5 + (Math.random() - 0.5) * 120;
+      ball.vy = Math.max(260, Math.abs(ball.vy) * 0.72 + 180);   // throw back downfield farther
+      ball.y = Math.max(ball.y, keeper.y + 14);                  // keep it out of the goal line
+      ball.vx = (ball.x - keeper.x) * 8 + (Math.random() - 0.5) * 160;
       ball.vz = Math.max(ball.vz, 140);
       ball.spin = 0;
       ball.state = 'flight';
@@ -771,6 +805,7 @@ function update(dt){
     boost.timer -= dt;
     if (boost.timer <= 0){ boost.active = false; updateBoostButton(); }
   }
+  updatePowerUp(dt);
 
   // Player movement — v10: faster base speed, scaled slightly by perspective size.
   player.moving = false;
@@ -878,6 +913,11 @@ function update(dt){
     showMsg('OUT');
     if (level === 0) startTutorial();
     else respawnBall();
+  }
+
+  // Power-up respawn cadence: first appears 8-15s into the round, then every 12-18s.
+  if (!powerUp.active && powerUp.spawnT <= 0 && gameState === 'playing'){
+    powerUp.spawnT = 8 + Math.random() * 7;
   }
 
   for (const p of particles){
@@ -1176,6 +1216,7 @@ function draw(){
     { y: player.y, fn: drawPlayer },
     { y: ball.y, fn: drawBall },
   ];
+  if (powerUp.active) ents.push({ y: powerUp.y, fn: drawPowerUp });
   if (level === 2 || level === 3) ents.push({ y: keeper.y, fn: drawKeeper });
   ents.sort((a, b) => a.y - b.y);
   for (const e of ents) e.fn();

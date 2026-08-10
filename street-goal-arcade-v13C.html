@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>Street Goal — Arcade v12</title>
+<title>Street Goal — Arcade v13C</title>
 <style>
   :root{
     --pitch:#15381f;
@@ -42,7 +42,7 @@
   #overlay h1{font-size:34px;letter-spacing:3px;font-weight:800}
   #overlay .big{font-size:56px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums}
   #overlay p{font-size:14px;opacity:.78;line-height:1.6;max-width:330px}
-  #levels{display:flex;gap:12px;margin-top:6px}
+  #levels{display:flex;flex-wrap:wrap;gap:12px;margin-top:6px;max-width:100%;justify-content:center}
   .lv{pointer-events:auto;cursor:pointer;border:2px solid rgba(240,246,235,.35);
     background:rgba(240,246,235,.08);color:var(--chalk);border-radius:12px;
     padding:12px 16px;font-size:14px;font-weight:800;letter-spacing:1px;min-width:118px}
@@ -64,6 +64,7 @@
   <div class="big" id="ov-score" style="display:none">0</div>
   <p id="ov-sub">Left thumb moves, right thumb swipes to shoot. Curved swipes bend the ball. Dribble touches knock the ball ahead — shoot fast!</p>
   <div id="levels">
+    <button class="lv" id="tut">TUTORIAL<small>Learn the basics</small></button>
     <button class="lv" id="lv1">LEVEL 1<small>Quadrant Bonus ×2</small></button>
     <button class="lv" id="lv2">LEVEL 2<small>Target Zone + Keeper</small></button>
     <button class="lv" id="lv3">LEVEL 3<small>Score Chase</small></button>
@@ -128,13 +129,14 @@ window.addEventListener('resize', resize);
 // ---------- Game state ----------
 const ROUND_TIME = 30;
 let gameState = 'ready';       // 'ready' | 'playing' | 'over'
-let level = 1;                 // 1: quadrant bonus  2: target zone + keeper  3: score chase + keeper
+let level = 1;                 // 0: tutorial  1: quadrant bonus  2: target zone + keeper  3: score chase + keeper
 let timeLeft = ROUND_TIME;
 let score = 0;
 const best = [0, 0, 0];        // per-level session best (1-indexed)
 let restartLockUntil = 0;
 let scoreChase = { target: 5, active: false, bestTime: [0, 0, 0, 0] }; // per-target best times
 let boost = { available: true, active: false, timer: 0, multiplier: 1.55 };
+let tutorial = { step: 0, done: false, hint: '' };
 let powerUp = { active: false, x: 0, y: 0, r: 12, spawnT: 0 };
 
 const player = { x: world.w/2, y: world.h*0.78, r: 15, speed: 252,
@@ -274,6 +276,9 @@ function startRound(lv, target){
   level = lv;
   score = 0;
   scoreChase.active = (lv === 3);
+  tutorial.step = (lv === 0) ? 1 : 0;
+  tutorial.done = (lv !== 0);
+  tutorial.hint = '';
   if (scoreChase.active){
     scoreChase.target = target || 5;
     timeLeft = 0;
@@ -295,9 +300,19 @@ function startRound(lv, target){
   boost.available = true; boost.active = false; boost.timer = 0;
   powerUp.active = false; powerUp.spawnT = 0;
   updateBoostButton();
-  respawnBall();
+  if (lv === 0) startTutorial();
+  else respawnBall();
   gameState = 'playing';
   overlay.classList.add('hidden');
+}
+
+function startTutorial(){
+  // Place the ball directly in front of the player so the first step is movement.
+  ball.state = 'free';
+  ball.x = world.w / 2; ball.y = world.h * 0.62;
+  ball.z = 0; ball.vx = 0; ball.vy = 0; ball.vz = 0; ball.spin = 0;
+  tutorial.step = 1;
+  tutorial.hint = 'Move left thumb to walk onto the ball';
 }
 
 function endRound(){
@@ -317,10 +332,15 @@ function endRound(){
     ovScore.style.display = 'block';
     ovScore.textContent = finalTime.toFixed(2) + 's';
   } else {
-    const isBest = score > best[level];
+    const isBest = level > 0 && score > best[level];
     if (isBest){ best[level] = score; bestEl.textContent = Math.max(best[1], best[2], best[3]); }
-    ovTitle.textContent = isBest && score > 0 ? 'NEW BEST!' : "TIME'S UP";
-    ovSub.innerHTML = 'Level ' + level + ' best this session: <b>' + best[level] + '</b>';
+    if (level === 0){
+      ovTitle.textContent = tutorial.done ? 'TUTORIAL DONE' : "TIME'S UP";
+      ovSub.innerHTML = 'Learned the basics. Pick a real level to play.';
+    } else {
+      ovTitle.textContent = isBest && score > 0 ? 'NEW BEST!' : "TIME'S UP";
+      ovSub.innerHTML = 'Level ' + level + ' best this session: <b>' + best[level] + '</b>';
+    }
     ovScore.style.display = 'block';
     ovScore.textContent = score;
   }
@@ -338,6 +358,7 @@ const levelsEl = document.getElementById('levels');
 const targetPickEl = document.getElementById('target-pick');
 const ovHint = document.getElementById('ov-hint');
 
+document.getElementById('tut').addEventListener('click', e => { e.stopPropagation(); startRound(0); });
 document.getElementById('lv1').addEventListener('click', e => { e.stopPropagation(); startRound(1); });
 document.getElementById('lv2').addEventListener('click', e => { e.stopPropagation(); startRound(2); });
 document.getElementById('lv3').addEventListener('click', e => {
@@ -360,7 +381,8 @@ overlay.addEventListener('click', () => {
   }
 });
 function updateBoostButton(){
-  // No button in v12; power-up is picked up on the field.
+  // No button in v13; power-up is picked up on the field. This function is kept
+  // as a no-op hook for any future UI additions.
 }
 function activateBoost(){
   boost.available = false; boost.active = true; boost.timer = 5.0;
@@ -494,18 +516,9 @@ function tryKick(){
   // Remember which quadrant the shot was taken from (for the Level 1 bonus).
   kickStartSector = sectorAt(player.x, player.y);
 
-  // v12: swipe closer to early versions — swipe length controls horizontal power,
-  // swipe speed controls vertical lift.  Short flick = chip, long swipe = firm shot.
-  const fingerSpeed = dist / dt;                     // px/s
-  let xyPower = Math.min(110 + dist * 1.5, MAX_KICK);
-  let zPower = Math.min(90 + fingerSpeed * 0.12, 420);
-
-  // v10: gentler distance modulation — closer to goal still weaker, but less swing.
-  const distFromGoal = Math.max(0, Math.min(1, player.y / world.h));
-  const xyMod = 0.75 + 0.25 * distFromGoal;
-  const zMod  = 0.90 + 0.10 * distFromGoal;
-  xyPower *= xyMod;
-  zPower *= zMod;
+  // v13C: v1 kick mechanics — swipe speed = power, straight arc from power, no modulation, no aim assist.
+  const fingerSpeed = Math.min(dist / dt, 3200);
+  const power = Math.min(110 + fingerSpeed * 0.17, MAX_KICK);
 
   let spin = 0;
   if (pts.length >= 6){
@@ -518,21 +531,12 @@ function tryKick(){
 
   const n = pts.length;
   const a0 = swipeAngleOf(pts, 0, Math.max(1, Math.floor(n / 3)));
-  // v12: light aim assist — just enough to keep near-misses on frame.
-  const gx = goal.x + goal.w / 2, gy = 8;
-  const toGoal = { x: gx - player.x, y: gy - player.y };
-  const toGoalLen = Math.hypot(toGoal.x, toGoal.y) || 1;
-  toGoal.x /= toGoalLen; toGoal.y /= toGoalLen;
-  const aimBlend = 0.12;
-  const dir = { x: Math.cos(a0) * (1 - aimBlend) + toGoal.x * aimBlend,
-                y: Math.sin(a0) * (1 - aimBlend) + toGoal.y * aimBlend };
-  const dirLen = Math.hypot(dir.x, dir.y) || 1;
-  dir.x /= dirLen; dir.y /= dirLen;
+  const dir = { x: Math.cos(a0), y: Math.sin(a0) };
 
   ball.state = 'flight';
-  ball.vx = dir.x * xyPower;
-  ball.vy = dir.y * xyPower;
-  ball.vz = zPower;
+  ball.vx = dir.x * power;
+  ball.vy = dir.y * power;
+  ball.vz = 90 + power * 0.26;
   ball.spin = spin;
   ball.stealGrace = 0.25;
   player.face = Math.atan2(dir.y, dir.x);
@@ -600,7 +604,32 @@ function onGoal(){
   spawnParticles(p.x, p.y, pts === 2 ? 34 : 26, pts === 2 ? 'rgba(255,224,138,.95)' : 'rgba(255,159,69,.95)');
   if (navigator.vibrate) navigator.vibrate(pts === 2 ? [30, 40, 90] : [30, 40, 60]);
   if (scoreChase.active && score >= scoreChase.target){ endRound(); return; }
+  if (level === 0){
+    tutorial.done = true;
+    tutorial.hint = 'Tutorial complete! Pick a real level.';
+    showMsg('NICE!');
+    setTimeout(() => { gameState = 'over'; endRound(); }, 1200);
+    return;
+  }
   respawnBall();
+}
+
+// ---------- Tutorial ----------
+function updateTutorial(){
+  const step = tutorial.step;
+  if (step === 1){
+    // Wait until player picks up the ball.
+    if (ball.state === 'held'){
+      tutorial.step = 2;
+      tutorial.hint = 'Great! Move to the glowing zone, then swipe up to shoot';
+    }
+  } else if (step === 2){
+    // Wait until a shot is taken (ball in flight).
+    if (ball.state === 'flight'){
+      tutorial.step = 3;
+      tutorial.hint = 'Ball is curving toward the goal — aim for the net!';
+    }
+  }
 }
 
 // ---------- Power-up (pick-up boost) ----------
@@ -713,9 +742,9 @@ function updateKeeper(dt){
         ball.stealGrace = 0.15;
         return;
       }
-      ball.vy = Math.max(120, Math.abs(ball.vy) * 0.62 + 90);   // parry back downfield
-      ball.y = Math.max(ball.y, keeper.y + 10);                  // keep it out of the goal line
-      ball.vx = (ball.x - keeper.x) * 5 + (Math.random() - 0.5) * 120;
+      ball.vy = Math.max(260, Math.abs(ball.vy) * 0.72 + 180);   // throw back downfield farther
+      ball.y = Math.max(ball.y, keeper.y + 14);                  // keep it out of the goal line
+      ball.vx = (ball.x - keeper.x) * 8 + (Math.random() - 0.5) * 160;
       ball.vz = Math.max(ball.vz, 140);
       ball.spin = 0;
       ball.state = 'flight';
@@ -849,6 +878,9 @@ function update(dt){
 
   if (level === 2 || level === 3) updateKeeper(dt);
 
+  // Tutorial progression
+  if (level === 0 && !tutorial.done) updateTutorial();
+
   // Goal
   if (ball.state === 'flight' && ball.y - ball.r < 0){
     const inMouth = ball.x > goal.x + 2 && ball.x < goal.x + goal.w - 2;
@@ -861,7 +893,8 @@ function update(dt){
       (ball.x + ball.r < 0 || ball.x - ball.r > world.w ||
        ball.y + ball.r < 0 || ball.y - ball.r > world.h)){
     showMsg('OUT');
-    respawnBall();
+    if (level === 0) startTutorial();
+    else respawnBall();
   }
 
   // Power-up respawn cadence: first appears 8-15s into the round, then every 12-18s.
@@ -1070,17 +1103,38 @@ function draw(){
     ctx.stroke();
   }
 
-  // Level 1: show the active pickup quadrant label.
+  // Level 1: clearly indicate the pickup segment and the bonus kick segment.
   if (level === 1 && gameState === 'playing'){
-    const b = sectorBounds(lastSector);
-    const c = toScreen((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2);
-    ctx.font = '700 ' + Math.max(11, 13 * c.s) + 'px -apple-system,sans-serif';
+    const pickup = sectorBounds(lastSector);
+    // Pulsing gold border around the pickup quadrant.
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 180);
+    pathQuad(pickup.x0, pickup.y0, pickup.x1, pickup.y1);
+    ctx.strokeStyle = 'rgba(255,224,138,' + (0.55 + 0.30 * pulse).toFixed(3) + ')';
+    ctx.lineWidth = 3 + 2 * pulse;
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,224,138,' + (0.10 + 0.08 * pulse).toFixed(3) + ')';
+    ctx.fill();
+    const c = toScreen((pickup.x0 + pickup.x1) / 2, (pickup.y0 + pickup.y1) / 2);
+    ctx.font = '700 ' + Math.max(12, 14 * c.s) + 'px -apple-system,sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(255,224,138,.35)';
-    ctx.fillText('PICK UP HERE', c.x, c.y);
-    ctx.fillStyle = 'rgba(240,246,235,.30)';
-    ctx.font = '600 ' + Math.max(9, 10 * c.s) + 'px -apple-system,sans-serif';
-    ctx.fillText('shoot from elsewhere = ×2', c.x, c.y + 14 * c.s);
+    ctx.fillStyle = 'rgba(255,224,138,.85)';
+    ctx.fillText('PICK UP HERE', c.x, c.y - 6 * c.s);
+    ctx.fillStyle = 'rgba(240,246,235,.75)';
+    ctx.font = '600 ' + Math.max(10, 11 * c.s) + 'px -apple-system,sans-serif';
+    ctx.fillText('shoot from elsewhere = ×2', c.x, c.y + 12 * c.s);
+
+    // Arrow hint pointing from the pickup zone toward the nearest non-pickup zone.
+    const cur = sectorAt(player.x, player.y);
+    if (cur !== lastSector && cur >= 0){
+      const target = sectorBounds(cur);
+      const tc = toScreen((target.x0 + target.x1) / 2, (target.y0 + target.y1) / 2);
+      ctx.font = '700 ' + Math.max(12, 14 * tc.s) + 'px -apple-system,sans-serif';
+      ctx.fillStyle = 'rgba(255,224,138,.85)';
+      ctx.fillText('KICK FROM HERE', tc.x, tc.y - 6 * tc.s);
+      ctx.fillStyle = 'rgba(255,224,138,.55)';
+      ctx.font = '600 ' + Math.max(10, 11 * tc.s) + 'px -apple-system,sans-serif';
+      ctx.fillText('×2 bonus active', tc.x, tc.y + 12 * tc.s);
+    }
   }
 
   // ---- Goal ----
