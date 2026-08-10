@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Street Goal — Perspective</title>
+<style>
+  :root{
+    --pitch:#15381f;
+    --pitch-2:#123219;
+    --chalk:#f0f6eb;
+    --ball:#ff9f45;
+    --kit:#4fc3f7;
+    --accent:#ffe08a;
+    --night:#0b1410;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden;background:var(--night);
+    font-family:-apple-system,'SF Pro Rounded','Segoe UI',Roboto,sans-serif;
+    touch-action:none;overscroll-behavior:none;user-select:none;-webkit-user-select:none}
+  #game{display:block;width:100vw;height:100vh}
+  #hud{position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);left:0;right:0;
+    display:flex;justify-content:center;pointer-events:none}
+  #score{color:var(--chalk);font-weight:800;font-size:34px;letter-spacing:2px;
+    text-shadow:0 2px 8px rgba(0,0,0,.6);font-variant-numeric:tabular-nums}
+  #msg{position:fixed;top:30%;left:0;right:0;text-align:center;pointer-events:none;
+    color:var(--accent);font-weight:800;font-size:40px;letter-spacing:4px;
+    text-shadow:0 3px 14px rgba(0,0,0,.7);opacity:0;transform:scale(.8);
+    transition:opacity .18s ease,transform .18s ease}
+  #msg.show{opacity:1;transform:scale(1)}
+  #hint{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);left:0;right:0;
+    text-align:center;color:rgba(240,246,235,.55);font-size:13px;letter-spacing:.5px;
+    pointer-events:none;transition:opacity .6s}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud"><div id="score">0</div></div>
+<div id="msg">GOAL!</div>
+<div id="hint">Left thumb: move &nbsp;•&nbsp; Swipe up to shoot at the far goal</div>
+<script>
+(() => {
+const cvs = document.getElementById('game');
+const ctx = cvs.getContext('2d');
+const scoreEl = document.getElementById('score');
+const msgEl = document.getElementById('msg');
+const hintEl = document.getElementById('hint');
+
+// ---------- Perspective camera (behind the player, looking upfield) ----------
+// World plane: wx = across the pitch, wy = depth (0 = far goal line, world.h = near edge).
+// z = height above the ground. The camera sits behind the near edge.
+const world = { w: 320, h: 460 };
+const goal  = { x: 0, w: 140, barH: 52 };
+
+let W = 0, H = 0, DPR = 1;
+let F = 1;        // focal length in px·world-units
+let D0 = 300;     // camera distance (world units) to the NEAR edge — controls foreshortening
+let hCam = 1;     // camera height above the ground plane
+let horizonY = 0; // screen y of the horizon
+
+function scaleAt(wy){ return F / (D0 + world.h - wy); } // px per world unit at this depth
+function toScreen(wx, wy, z = 0){
+  const s = scaleAt(wy);
+  return { x: W / 2 + (wx - world.w / 2) * s,
+           y: horizonY + s * (hCam - z),
+           s };
+}
+
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cvs.width = W * DPR; cvs.height = H * DPR;
+  cvs.style.width = W + 'px'; cvs.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+  horizonY = Math.max(58, H * 0.14);
+  const sNear = (W * 0.94) / world.w;          // near edge nearly spans the screen
+  F = sNear * D0;
+  hCam = (H * 0.80 - horizonY) / sNear;        // near edge sits at ~80% screen height
+  goal.x = (world.w - goal.w) / 2;
+}
+window.addEventListener('resize', resize);
+
+// ---------- Entities (world space) ----------
+const player = { x: world.w/2, y: world.h*0.78, r: 13, speed: 195, face: -Math.PI/2 };
+const ball = { x: world.w/2, y: world.h*0.5, z: 0, r: 8,
+               vx: 0, vy: 0, vz: 0, state: 'free' }; // 'free' | 'held' | 'flight'
+let score = 0;
+let particles = [];
+let kickFlash = 0;
+
+function respawnBall(){
+  ball.x = world.w/2; ball.y = world.h*0.5;
+  ball.z = 0; ball.vx = 0; ball.vy = 0; ball.vz = 0;
+  ball.state = 'free';
+}
+
+// ---------- Touch: left joystick / right swipe ----------
+const joy = { active:false, id:null, ox:0, oy:0, dx:0, dy:0, max:52 };
+const swipe = { active:false, id:null, pts:[] };
+
+function startTouch(x, y, id){
+  if (x < W/2 && !joy.active){
+    joy.active = true; joy.id = id; joy.ox = x; joy.oy = y; joy.dx = 0; joy.dy = 0;
+  } else if (x >= W/2 && !swipe.active){
+    swipe.active = true; swipe.id = id;
+    swipe.pts = [{ x, y, t: performance.now() }];
+  }
+  hintEl.style.opacity = 0;
+}
+function moveTouch(x, y, id){
+  if (joy.active && id === joy.id){
+    let dx = x - joy.ox, dy = y - joy.oy;
+    const d = Math.hypot(dx, dy);
+    if (d > joy.max){ dx = dx/d*joy.max; dy = dy/d*joy.max; }
+    joy.dx = dx; joy.dy = dy;
+  }
+  if (swipe.active && id === swipe.id){
+    swipe.pts.push({ x, y, t: performance.now() });
+    if (swipe.pts.length > 12) swipe.pts.shift();
+  }
+}
+function endTouch(id){
+  if (joy.active && id === joy.id){ joy.active = false; joy.dx = 0; joy.dy = 0; }
+  if (swipe.active && id === swipe.id){ tryKick(); swipe.active = false; swipe.pts = []; }
+}
+
+cvs.addEventListener('touchstart', e => { e.preventDefault();
+  for (const t of e.changedTouches) startTouch(t.clientX, t.clientY, t.identifier); }, { passive:false });
+cvs.addEventListener('touchmove', e => { e.preventDefault();
+  for (const t of e.changedTouches) moveTouch(t.clientX, t.clientY, t.identifier); }, { passive:false });
+cvs.addEventListener('touchend', e => { e.preventDefault();
+  for (const t of e.changedTouches) endTouch(t.identifier); }, { passive:false });
+cvs.addEventListener('touchcancel', e => { e.preventDefault();
+  for (const t of e.changedTouches) endTouch(t.identifier); }, { passive:false });
+
+// Mouse fallback for desktop testing
+cvs.addEventListener('mousedown', e => startTouch(e.clientX, e.clientY, 'm'));
+cvs.addEventListener('mousemove', e => moveTouch(e.clientX, e.clientY, 'm'));
+window.addEventListener('mouseup', () => endTouch('m'));
+
+// Screen direction → world direction. With this camera, screen up = upfield
+// (toward the goal, wy decreasing) and screen x = pitch x, so it maps directly.
+function screenDirToWorld(dx, dy){
+  const d = Math.hypot(dx, dy) || 1;
+  return { x: dx / d, y: dy / d };
+}
+
+// ---------- Kick ----------
+const MAX_KICK = 640;
+const ASSIST = 100;       // aim-assist accel, ONLY while ball.state === 'flight'
+const GRAV_Z = 640;
+
+function tryKick(){
+  if (swipe.pts.length < 2) return;
+  const a = swipe.pts[0], b = swipe.pts[swipe.pts.length - 1];
+  const dt = Math.max((b.t - a.t) / 1000, 0.016);
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 18) return;
+
+  if (ball.state !== 'held'){
+    kickFlash = -1; setTimeout(() => kickFlash = 0, 220);
+    return;
+  }
+
+  const fingerSpeed = Math.min(dist / dt, 3200);
+  const power = Math.min(110 + fingerSpeed * 0.17, MAX_KICK);
+  const dir = screenDirToWorld(dx, dy);
+
+  ball.state = 'flight';
+  ball.vx = dir.x * power;
+  ball.vy = dir.y * power;
+  ball.vz = 90 + power * 0.26;
+  player.face = Math.atan2(dir.y, dir.x);
+
+  kickFlash = 1; setTimeout(() => kickFlash = 0, 150);
+  if (navigator.vibrate) navigator.vibrate(20);
+  const p = toScreen(ball.x, ball.y, ball.z);
+  spawnParticles(p.x, p.y, 6, 'rgba(255,224,138,.9)');
+}
+
+// ---------- Particles / messages ----------
+function spawnParticles(x, y, n, color){
+  for (let i = 0; i < n; i++){
+    const a = Math.random() * Math.PI * 2, s = 60 + Math.random() * 160;
+    particles.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: .5 + Math.random()*.3, color });
+  }
+}
+let msgTimer = null;
+function showMsg(text){
+  msgEl.textContent = text;
+  msgEl.classList.add('show');
+  clearTimeout(msgTimer);
+  msgTimer = setTimeout(() => msgEl.classList.remove('show'), 900);
+}
+
+// ---------- Update ----------
+function update(dt){
+  if (joy.active && Math.hypot(joy.dx, joy.dy) > joy.max * 0.06){
+    const mag = Math.hypot(joy.dx, joy.dy) / joy.max;
+    const dir = screenDirToWorld(joy.dx, joy.dy);
+    player.x += dir.x * player.speed * mag * dt;
+    player.y += dir.y * player.speed * mag * dt;
+    player.face = Math.atan2(dir.y, dir.x);
+  }
+  player.x = Math.max(player.r, Math.min(world.w - player.r, player.x));
+  player.y = Math.max(player.r, Math.min(world.h - player.r, player.y));
+
+  if (ball.state === 'held'){
+    const off = player.r + ball.r + 2;
+    ball.x = player.x + Math.cos(player.face) * off;
+    ball.y = player.y + Math.sin(player.face) * off;
+    ball.z = 0; ball.vx = 0; ball.vy = 0; ball.vz = 0;
+    ball.x = Math.max(ball.r, Math.min(world.w - ball.r, ball.x));
+    ball.y = Math.max(ball.r, Math.min(world.h - ball.r, ball.y));
+  } else {
+    if (ball.state === 'flight'){
+      const gx = goal.x + goal.w / 2, gy = 0;
+      const adx = gx - ball.x, ady = gy - ball.y;
+      const ad = Math.hypot(adx, ady) || 1;
+      ball.vx += (adx / ad) * ASSIST * dt;
+      ball.vy += (ady / ad) * ASSIST * dt;
+    }
+
+    ball.x += ball.vx * dt;
+    ball.y += ball.vy * dt;
+    if (ball.state === 'flight'){
+      ball.z += ball.vz * dt;
+      ball.vz -= GRAV_Z * dt;
+      if (ball.z <= 0){
+        ball.z = 0;
+        if (Math.abs(ball.vz) > 60){ ball.vz = -ball.vz * 0.45; }
+        else ball.vz = 0;
+      }
+    }
+    const fr = Math.pow(0.42, dt);
+    ball.vx *= fr; ball.vy *= fr;
+
+    if (Math.hypot(ball.vx, ball.vy) < 8 && ball.z === 0 && Math.abs(ball.vz) < 1){
+      ball.vx = 0; ball.vy = 0; ball.vz = 0;
+      ball.state = 'free';
+    }
+
+    const pd = Math.hypot(ball.x - player.x, ball.y - player.y);
+    const canGrab = ball.state === 'free' ||
+                    (ball.state === 'flight' && ball.z < 6 && Math.hypot(ball.vx, ball.vy) < 170);
+    if (canGrab && pd < player.r + ball.r + 6){
+      ball.state = 'held';
+      if (navigator.vibrate) navigator.vibrate(8);
+    }
+  }
+
+  // Goal: crossing the far line between the posts, under the bar
+  if (ball.state === 'flight' && ball.y - ball.r < 0){
+    const inMouth = ball.x > goal.x + 2 && ball.x < goal.x + goal.w - 2;
+    if (inMouth && ball.z < goal.barH && ball.vy < 0){
+      score++;
+      scoreEl.textContent = score;
+      showMsg('GOAL!');
+      const p = toScreen(ball.x, 0, ball.z);
+      spawnParticles(p.x, p.y, 26, 'rgba(255,159,69,.95)');
+      if (navigator.vibrate) navigator.vibrate([30, 40, 60]);
+      respawnBall();
+    }
+  }
+  if (ball.state !== 'held' &&
+      (ball.x + ball.r < 0 || ball.x - ball.r > world.w ||
+       ball.y + ball.r < 0 || ball.y - ball.r > world.h)){
+    showMsg('OUT');
+    respawnBall();
+  }
+
+  for (const p of particles){
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vx *= 0.92; p.vy *= 0.92;
+    p.life -= dt;
+  }
+  particles = particles.filter(p => p.life > 0);
+}
+
+// ---------- Draw helpers ----------
+function pathQuad(x0, y0, x1, y1){
+  // ground rectangle in world coords → perspective quad on screen
+  const a = toScreen(x0, y0), b = toScreen(x1, y0), c = toScreen(x1, y1), d = toScreen(x0, y1);
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y);
+  ctx.closePath();
+}
+function groundEllipse(wx, wy, rWorld, squash = 1){
+  const p = toScreen(wx, wy);
+  ctx.beginPath();
+  ctx.ellipse(p.x, p.y, rWorld * p.s * squash, rWorld * p.s * squash * 0.38, 0, 0, Math.PI * 2);
+}
+
+// ---------- Draw ----------
+function draw(){
+  ctx.clearRect(0, 0, W, H);
+
+  // Night sky above the horizon, dark ground below
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#0e1a13');
+  bg.addColorStop(1, '#0a0f0c');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+  // faint glow at the horizon (floodlights beyond the pitch)
+  const glow = ctx.createLinearGradient(0, horizonY - 40, 0, horizonY + 60);
+  glow.addColorStop(0, 'rgba(255,224,138,0)');
+  glow.addColorStop(0.5, 'rgba(255,224,138,.06)');
+  glow.addColorStop(1, 'rgba(255,224,138,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, horizonY - 40, W, 100);
+
+  const css = k => getComputedStyle(document.documentElement).getPropertyValue(k);
+
+  // Pitch with mowing stripes — equal WORLD depth, so they visibly compress with distance
+  const stripes = 7, sh = world.h / stripes;
+  for (let i = 0; i < stripes; i++){
+    pathQuad(0, i * sh, world.w, (i + 1) * sh);
+    ctx.fillStyle = i % 2 ? css('--pitch-2') : css('--pitch');
+    ctx.fill();
+  }
+
+  // Chalk boundary
+  ctx.strokeStyle = 'rgba(240,246,235,.85)';
+  ctx.lineWidth = 2.5;
+  pathQuad(0, 0, world.w, world.h);
+  ctx.stroke();
+
+  // Penalty box at the far end + center dot
+  ctx.strokeStyle = 'rgba(240,246,235,.5)';
+  ctx.lineWidth = 1.8;
+  pathQuad(goal.x - 26, 0, goal.x + goal.w + 26, 90);
+  ctx.stroke();
+  const cd = toScreen(world.w/2, world.h*0.5);
+  ctx.beginPath(); ctx.arc(cd.x, cd.y, Math.max(2.5, 3.5 * cd.s / scaleAt(world.h)), 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(240,246,235,.6)'; ctx.fill();
+
+  // ---- Goal on the far line ----
+  const g0 = toScreen(goal.x, 0), g1 = toScreen(goal.x + goal.w, 0);
+  const g0t = toScreen(goal.x, 0, goal.barH), g1t = toScreen(goal.x + goal.w, 0, goal.barH);
+  // back of the net, slightly behind the line (drawn as a receding panel)
+  const nb0 = toScreen(goal.x + 10, -26, goal.barH * 0.8), nb1 = toScreen(goal.x + goal.w - 10, -26, goal.barH * 0.8);
+  const ng0 = toScreen(goal.x + 10, -26), ng1 = toScreen(goal.x + goal.w - 10, -26);
+  ctx.strokeStyle = 'rgba(240,246,235,.25)';
+  ctx.lineWidth = 1;
+  const netN = 12;
+  for (let i = 0; i <= netN; i++){
+    const t = i / netN;
+    const fx = g0.x + (g1.x - g0.x) * t,  fy = g0.y;
+    const ftx = g0t.x + (g1t.x - g0t.x) * t, fty = g0t.y;
+    const bx = nb0.x + (nb1.x - nb0.x) * t, by = nb0.y;
+    // vertical face strings + top panel to the back bar
+    ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(ftx, fty); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ftx, fty); ctx.lineTo(bx, by); ctx.stroke();
+  }
+  for (let j = 1; j <= 4; j++){
+    const z = (goal.barH * j) / 5;
+    const l = toScreen(goal.x, 0, z), r = toScreen(goal.x + goal.w, 0, z);
+    ctx.beginPath(); ctx.moveTo(l.x, l.y); ctx.lineTo(r.x, r.y); ctx.stroke();
+  }
+  // posts + crossbar
+  ctx.strokeStyle = css('--chalk');
+  ctx.lineCap = 'round';
+  ctx.lineWidth = Math.max(3, 4 * scaleAt(0) / scaleAt(world.h) * 3);
+  ctx.beginPath(); ctx.moveTo(g0.x, g0.y); ctx.lineTo(g0t.x, g0t.y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(g1.x, g1.y); ctx.lineTo(g1t.x, g1t.y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(g0t.x, g0t.y); ctx.lineTo(g1t.x, g1t.y); ctx.stroke();
+  // goal-line glow while aim assist is live
+  if (ball.state === 'flight'){
+    ctx.strokeStyle = 'rgba(255,224,138,.35)';
+    ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(g0.x, g0.y); ctx.lineTo(g1.x, g1.y); ctx.stroke();
+  }
+
+  // ---- Entities: draw far-to-near (smaller wy first) ----
+  const order = ball.y <= player.y ? [drawBall, drawPlayer] : [drawPlayer, drawBall];
+  for (const fn of order) fn();
+
+  function drawPlayer(){
+    const base = toScreen(player.x, player.y);
+    const s = base.s;
+    groundEllipse(player.x, player.y, player.r * 0.85);
+    ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fill();
+    const bodyH = player.r * s * 2.2;
+    ctx.beginPath();
+    ctx.ellipse(base.x, base.y - bodyH * 0.55, player.r * s * 0.95, bodyH * 0.55, 0, 0, Math.PI * 2);
+    ctx.fillStyle = css('--kit'); ctx.fill();
+    ctx.lineWidth = Math.max(1.5, 2.5 * s); ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(base.x, base.y - bodyH * 1.18, player.r * s * 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#f3c89b'; ctx.fill();
+    // facing chevron on the ground
+    const tip = toScreen(player.x + Math.cos(player.face) * (player.r + 10),
+                         player.y + Math.sin(player.face) * (player.r + 10));
+    const l = toScreen(player.x + Math.cos(player.face + 2.5) * player.r * 0.9,
+                       player.y + Math.sin(player.face + 2.5) * player.r * 0.9);
+    const r = toScreen(player.x + Math.cos(player.face - 2.5) * player.r * 0.9,
+                       player.y + Math.sin(player.face - 2.5) * player.r * 0.9);
+    ctx.beginPath(); ctx.moveTo(tip.x, tip.y); ctx.lineTo(l.x, l.y); ctx.lineTo(r.x, r.y); ctx.closePath();
+    ctx.fillStyle = kickFlash === -1 ? 'rgba(255,90,90,.85)' : 'rgba(255,255,255,.85)';
+    ctx.fill();
+    if (ball.state === 'held'){
+      groundEllipse(player.x, player.y, player.r * 1.5);
+      ctx.strokeStyle = kickFlash === 1 ? 'rgba(255,224,138,.95)' : 'rgba(255,224,138,.35)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 7]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  function drawBall(){
+    const p = toScreen(ball.x, ball.y, ball.z);
+    groundEllipse(ball.x, ball.y, ball.r * 0.8, Math.max(0.4, 1 - ball.z / 90));
+    ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fill();
+    const br = ball.r * p.s;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y - br * 0.6, br, 0, Math.PI * 2);
+    ctx.fillStyle = css('--ball'); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.4)'; ctx.lineWidth = Math.max(1, 1.5 * p.s); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(p.x - br * 0.7, p.y - br * 0.9);
+    ctx.quadraticCurveTo(p.x, p.y - br * 0.3, p.x + br * 0.7, p.y - br * 0.9);
+    ctx.stroke();
+  }
+
+  // Particles
+  for (const p of particles){
+    ctx.globalAlpha = Math.max(p.life, 0);
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = p.color; ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Joystick UI
+  if (joy.active){
+    ctx.beginPath(); ctx.arc(joy.ox, joy.oy, joy.max, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(240,246,235,.25)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.beginPath(); ctx.arc(joy.ox + joy.dx, joy.oy + joy.dy, 24, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(240,246,235,.30)'; ctx.fill();
+  }
+
+  // Swipe trail
+  if (swipe.active && swipe.pts.length > 1){
+    ctx.beginPath();
+    ctx.moveTo(swipe.pts[0].x, swipe.pts[0].y);
+    for (const pt of swipe.pts) ctx.lineTo(pt.x, pt.y);
+    ctx.strokeStyle = 'rgba(255,224,138,.6)';
+    ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.stroke();
+  }
+}
+
+// ---------- Loop ----------
+let last = performance.now();
+function loop(now){
+  const dt = Math.min((now - last) / 1000, 0.033);
+  last = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+resize();
+respawnBall();
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
