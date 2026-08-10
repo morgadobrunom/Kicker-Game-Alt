@@ -38,7 +38,7 @@
     justify-content:center;gap:12px;background:rgba(8,15,10,.66);backdrop-filter:blur(3px);
     color:var(--chalk);text-align:center;
     transition:opacity .25s ease;padding:0 24px}
-  #overlay.hidden{opacity:0;pointer-events:none}
+  #overlay.hidden{opacity:0;pointer-events:none;visibility:hidden}
   #overlay h1{font-size:34px;letter-spacing:3px;font-weight:800}
   #overlay .big{font-size:56px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums}
   #overlay p{font-size:14px;opacity:.78;line-height:1.6;max-width:330px}
@@ -425,7 +425,7 @@ function sTick(){ tone(1050, 0.06, 'square', 0.10); }         // clock tick
 // v14: the whole canvas is a touch surface. A short tap sets the player's destination
 // on the pitch; a swipe anywhere kicks the ball. No joystick.
 const TAP_DIST = 22, TAP_TIME = 400;
-const touch = { id: null, sx:0, sy:0, t:0, isSwipe:false };
+const touch = { id: null, sx:0, sy:0, lx:0, ly:0, t:0, isSwipe:false };
 const swipe = { active:false, id:null, pts:[] };
 const moveTarget = { active:false, x:0, y:0 };
 
@@ -453,11 +453,13 @@ function setMoveTarget(sx, sy){
 function startTouch(x, y, id){
   audio();  // unlock/resume audio on a user gesture
   if (gameState !== 'playing') return; // level buttons handle restarts
-  touch.id = id; touch.sx = x; touch.sy = y; touch.t = performance.now(); touch.isSwipe = false;
+  touch.id = id; touch.sx = x; touch.sy = y; touch.lx = x; touch.ly = y;
+  touch.t = performance.now(); touch.isSwipe = false;
   swipe.active = true; swipe.id = id; swipe.pts = [{ x, y, t: performance.now() }];
 }
 function moveTouch(x, y, id){
   if (touch.id !== id) return;
+  touch.lx = x; touch.ly = y;
   if (!touch.isSwipe && Math.hypot(x - touch.sx, y - touch.sy) > TAP_DIST){
     touch.isSwipe = true;
   }
@@ -469,14 +471,21 @@ function moveTouch(x, y, id){
 function endTouch(id){
   if (touch.id !== id) return;
   const elapsed = performance.now() - touch.t;
-  const dist = Math.hypot(swipe.pts[swipe.pts.length - 1].x - touch.sx,
-                          swipe.pts[swipe.pts.length - 1].y - touch.sy);
-  swipe.active = false; swipe.id = null; swipe.pts = [];
+  const dist = Math.hypot(touch.lx - touch.sx, touch.ly - touch.sy);
+  // Quick swipes that never fired touchmove still need an end point.
+  if (swipe.active && swipe.id === id && swipe.pts.length > 0){
+    swipe.pts.push({ x: touch.lx, y: touch.ly, t: performance.now() });
+  }
+  const isTap = dist < TAP_DIST && elapsed < TAP_TIME;
   touch.id = null;
-  if (!touch.isSwipe && dist < TAP_DIST && elapsed < TAP_TIME){
+  if (isTap){
+    swipe.active = false; swipe.id = null; swipe.pts = [];
     setMoveTarget(touch.sx, touch.sy);
   } else {
+    // Let tryKick read the trace, then clear it.
+    swipe.active = false; swipe.id = null;
     tryKick();
+    swipe.pts = [];
   }
 }
 
