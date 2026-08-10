@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Street Goal — Arcade v2</title>
+<style>
+  :root{
+    --pitch:#15381f;
+    --pitch-2:#123219;
+    --chalk:#f0f6eb;
+    --ball:#ff9f45;
+    --kit:#4fc3f7;
+    --accent:#ffe08a;
+    --danger:#ff6b6b;
+    --night:#0b1410;
+    --keeper:#e5484d;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden;background:var(--night);
+    font-family:-apple-system,'SF Pro Rounded','Segoe UI',Roboto,sans-serif;
+    touch-action:none;overscroll-behavior:none;user-select:none;-webkit-user-select:none}
+  #game{display:block;width:100vw;height:100vh}
+  #hud{position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);left:0;right:0;
+    display:flex;justify-content:space-between;align-items:flex-start;
+    padding:0 18px;pointer-events:none}
+  .hud-item{color:var(--chalk);text-shadow:0 2px 8px rgba(0,0,0,.6);text-align:center;min-width:64px}
+  .hud-label{font-size:10px;letter-spacing:2px;opacity:.6;font-weight:700}
+  .hud-value{font-size:28px;font-weight:800;letter-spacing:1px;font-variant-numeric:tabular-nums}
+  #timer.low{color:var(--danger);animation:pulse .5s infinite alternate}
+  @keyframes pulse{from{transform:scale(1)}to{transform:scale(1.12)}}
+  #msg{position:fixed;top:30%;left:0;right:0;text-align:center;pointer-events:none;
+    color:var(--accent);font-weight:800;font-size:40px;letter-spacing:4px;
+    text-shadow:0 3px 14px rgba(0,0,0,.7);opacity:0;transform:scale(.8);
+    transition:opacity .18s ease,transform .18s ease}
+  #msg.show{opacity:1;transform:scale(1)}
+  #overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:12px;background:rgba(8,15,10,.66);backdrop-filter:blur(3px);
+    color:var(--chalk);text-align:center;
+    transition:opacity .25s ease;padding:0 24px}
+  #overlay.hidden{opacity:0;pointer-events:none}
+  #overlay h1{font-size:34px;letter-spacing:3px;font-weight:800}
+  #overlay .big{font-size:56px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums}
+  #overlay p{font-size:14px;opacity:.78;line-height:1.6;max-width:330px}
+  #levels{display:flex;gap:12px;margin-top:6px}
+  .lv{pointer-events:auto;cursor:pointer;border:2px solid rgba(240,246,235,.35);
+    background:rgba(240,246,235,.08);color:var(--chalk);border-radius:12px;
+    padding:12px 16px;font-size:14px;font-weight:800;letter-spacing:1px;min-width:118px}
+  .lv small{display:block;font-weight:600;letter-spacing:.3px;opacity:.65;margin-top:4px;font-size:11px}
+  .lv:active{transform:scale(.96)}
+  #overlay .hint{margin-top:10px;font-size:12px;letter-spacing:1px;opacity:.55}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+  <div class="hud-item"><div class="hud-label">BEST</div><div class="hud-value" id="best">0</div></div>
+  <div class="hud-item"><div class="hud-label">SCORE</div><div class="hud-value" id="score">0</div></div>
+  <div class="hud-item"><div class="hud-label">TIME</div><div class="hud-value" id="timer">30</div></div>
+</div>
+<div id="msg">GOAL!</div>
+<div id="overlay">
+  <h1>STREET GOAL</h1>
+  <div class="big" id="ov-score" style="display:none">0</div>
+  <p id="ov-sub">Left thumb moves, right thumb swipes to shoot. Curved swipes bend the ball. Dribble touches knock the ball ahead — shoot fast!</p>
+  <div id="levels">
+    <button class="lv" id="lv1">LEVEL 1<small>Quadrant Bonus ×2</small></button>
+    <button class="lv" id="lv2">LEVEL 2<small>Target Zone + Keeper</small></button>
+  </div>
+  <div class="hint">TAP A LEVEL TO PLAY</div>
+</div>
+<script>
+(() => {
+const cvs = document.getElementById('game');
+const ctx = cvs.getContext('2d');
+const scoreEl = document.getElementById('score');
+const bestEl = document.getElementById('best');
+const timerEl = document.getElementById('timer');
+const msgEl = document.getElementById('msg');
+const overlay = document.getElementById('overlay');
+const ovTitle = overlay.querySelector('h1');
+const ovSub = document.getElementById('ov-sub');
+const ovScore = document.getElementById('ov-score');
+
+// ---------- Perspective camera ----------
+const world = { w: 320, h: 460 };
+const goal  = { x: 0, w: 140, barH: 52 };
+let W = 0, H = 0, DPR = 1;
+let F = 1, D0 = 300, hCam = 1, horizonY = 0;
+
+function scaleAt(wy){ return F / (D0 + world.h - wy); }
+function toScreen(wx, wy, z = 0){
+  const s = scaleAt(wy);
+  return { x: W / 2 + (wx - world.w / 2) * s,
+           y: horizonY + s * (hCam - z),
+           s };
+}
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cvs.width = W * DPR; cvs.height = H * DPR;
+  cvs.style.width = W + 'px'; cvs.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  horizonY = Math.max(58, H * 0.14);
+  const sNear = (W * 0.94) / world.w;
+  F = sNear * D0;
+  hCam = (H * 0.80 - horizonY) / sNear;
+  goal.x = (world.w - goal.w) / 2;
+}
+window.addEventListener('resize', resize);
+
+// ---------- Game state ----------
+const ROUND_TIME = 30;
+let gameState = 'ready';       // 'ready' | 'playing' | 'over'
+let level = 1;                 // 1: quadrant bonus  2: target zone + keeper
+let timeLeft = ROUND_TIME;
+let score = 0;
+const best = [0, 0, 0];        // per-level session best (1-indexed)
+let restartLockUntil = 0;
+
+const player = { x: world.w/2, y: world.h*0.78, r: 13, speed: 195,
+                 face: -Math.PI/2, moving: false, mag: 0, animT: 0 };
+const ball = { x: world.w/2, y: world.h*0.5, z: 0, r: 8,
+               vx: 0, vy: 0, vz: 0, spin: 0, state: 'free', stealGrace: 0 };
+// Dribble state: each touch pushes the ball forward and briefly breaks possession.
+let drip = { armed: false, wait: 0 };
+
+const keeper = { x: world.w/2, y: 26, r: 12, homeX: world.w/2, phase: 0,
+                 animT: 0, lunge: 0, lungeVx: 0, cooldown: 0, holdT: 0 };
+const KEEPER_LUNGE_SPEED = 300;
+const KEEPER_TRACK_SPEED = 74;
+const KEEPER_HOLD_TIME = 1.1;
+
+let particles = [];
+let kickFlash = 0;
+let keeperFlash = 0;
+let kickStartSector = -1;
+let zoneIdx = 0;
+let zoneFlash = 0;
+
+// ---------- Sector-based respawn ----------
+const SECTOR_COLS = 2, SECTOR_ROWS = 2;
+const SECTOR_MARGIN = 30;
+const SECTOR_DEPTH = { far: 0.16, near: 0.92 };
+let lastSector = -1;
+let sectorFlash = { idx: -1, t: 0 };
+
+function sectorBounds(idx){
+  const col = idx % SECTOR_COLS, row = Math.floor(idx / SECTOR_COLS);
+  const usableW = world.w - SECTOR_MARGIN * 2;
+  const x0 = SECTOR_MARGIN + usableW * (col / SECTOR_COLS);
+  const x1 = SECTOR_MARGIN + usableW * ((col + 1) / SECTOR_COLS);
+  const yFar = world.h * SECTOR_DEPTH.far, yNear = world.h * SECTOR_DEPTH.near;
+  const y0 = yFar + (yNear - yFar) * (row / SECTOR_ROWS);
+  const y1 = yFar + (yNear - yFar) * ((row + 1) / SECTOR_ROWS);
+  return { x0, x1, y0, y1 };
+}
+function sectorAt(wx, wy){
+  const usableW = world.w - SECTOR_MARGIN * 2;
+  const col = Math.max(0, Math.min(SECTOR_COLS - 1,
+    Math.floor((wx - SECTOR_MARGIN) / usableW * SECTOR_COLS)));
+  const yFar = world.h * SECTOR_DEPTH.far, yNear = world.h * SECTOR_DEPTH.near;
+  const row = Math.max(0, Math.min(SECTOR_ROWS - 1,
+    Math.floor((wy - yFar) / (yNear - yFar) * SECTOR_ROWS)));
+  return row * SECTOR_COLS + col;
+}
+
+function respawnBall(){
+  const total = SECTOR_COLS * SECTOR_ROWS;
+  let idx = Math.floor(Math.random() * (total - 1));
+  if (lastSector >= 0 && idx >= lastSector) idx++;
+  if (idx >= total) idx = 0;
+  lastSector = idx;
+
+  const b = sectorBounds(idx);
+  const pad = ball.r + 5;
+  ball.x = b.x0 + pad + Math.random() * Math.max(1, (b.x1 - b.x0) - pad * 2);
+  ball.y = b.y0 + pad + Math.random() * Math.max(1, (b.y1 - b.y0) - pad * 2);
+  ball.z = 0; ball.vx = 0; ball.vy = 0; ball.vz = 0; ball.spin = 0;
+  ball.state = 'free'; ball.stealGrace = 0;
+  drip.armed = false; drip.wait = 0;
+
+  sectorFlash.idx = idx;
+  sectorFlash.t = 1.2;
+
+  if (level === 2) newZone();
+}
+
+// ---------- Level 2: goal target zone ----------
+function newZone(){
+  let nz = Math.floor(Math.random() * 4);
+  if (nz === zoneIdx) nz = (nz + 1) % 4;
+  zoneIdx = nz;
+  zoneFlash = 1.0;
+}
+
+// ---------- Round flow ----------
+function startRound(lv){
+  level = lv;
+  score = 0;
+  timeLeft = ROUND_TIME;
+  scoreEl.textContent = '0';
+  timerEl.textContent = ROUND_TIME;
+  timerEl.classList.remove('low');
+  player.x = world.w/2; player.y = world.h*0.78; player.face = -Math.PI/2;
+  player.moving = false; player.animT = 0;
+  keeper.x = keeper.homeX; keeper.y = 26; keeper.phase = 0;
+  keeper.lunge = 0; keeper.cooldown = 0; keeper.holdT = 0; keeper.animT = 0;
+  lastSector = -1;
+  respawnBall();
+  gameState = 'playing';
+  overlay.classList.add('hidden');
+}
+
+function endRound(){
+  gameState = 'over';
+  restartLockUntil = performance.now() + 700;
+  const isBest = score > best[level];
+  if (isBest){ best[level] = score; bestEl.textContent = Math.max(best[1], best[2]); }
+  ovTitle.textContent = isBest && score > 0 ? 'NEW BEST!' : "TIME'S UP";
+  ovSub.innerHTML = 'Level ' + level + ' best this session: <b>' + best[level] + '</b>';
+  ovScore.style.display = 'block';
+  ovScore.textContent = score;
+  overlay.classList.remove('hidden');
+  if (navigator.vibrate) navigator.vibrate([60, 60, 60]);
+}
+
+document.getElementById('lv1').addEventListener('click', e => { e.stopPropagation(); startRound(1); });
+document.getElementById('lv2').addEventListener('click', e => { e.stopPropagation(); startRound(2); });
+bestEl.textContent = '0';
+
+// ---------- Touch ----------
+const joy = { active:false, id:null, ox:0, oy:0, dx:0, dy:0, max:52 };
+const swipe = { active:false, id:null, pts:[] };
+
+function startTouch(x, y, id){
+  if (gameState !== 'playing') return; // level buttons handle restarts
+  if (x < W/2 && !joy.active){
+    joy.active = true; joy.id = id; joy.ox = x; joy.oy = y; joy.dx = 0; joy.dy = 0;
+  } else if (x >= W/2 && !swipe.active){
+    swipe.active = true; swipe.id = id;
+    swipe.pts = [{ x, y, t: performance.now() }];
+  }
+}
+function moveTouch(x, y, id){
+  if (joy.active && id === joy.id){
+    let dx = x - joy.ox, dy = y - joy.oy;
+    const d = Math.hypot(dx, dy);
+    if (d > joy.max){ dx = dx/d*joy.max; dy = dy/d*joy.max; }
+    joy.dx = dx; joy.dy = dy;
+  }
+  if (swipe.active && id === swipe.id){
+    swipe.pts.push({ x, y, t: performance.now() });
+    if (swipe.pts.length > 28) swipe.pts.shift();
+  }
+}
+function endTouch(id){
+  if (joy.active && id === joy.id){ joy.active = false; joy.dx = 0; joy.dy = 0; }
+  if (swipe.active && id === swipe.id){ tryKick(); swipe.active = false; swipe.pts = []; }
+}
+
+cvs.addEventListener('touchstart', e => { e.preventDefault();
+  for (const t of e.changedTouches) startTouch(t.clientX, t.clientY, t.identifier); }, { passive:false });
+cvs.addEventListener('touchmove', e => { e.preventDefault();
+  for (const t of e.changedTouches) moveTouch(t.clientX, t.clientY, t.identifier); }, { passive:false });
+cvs.addEventListener('touchend', e => { e.preventDefault();
+  for (const t of e.changedTouches) endTouch(t.identifier); }, { passive:false });
+cvs.addEventListener('touchcancel', e => { e.preventDefault();
+  for (const t of e.changedTouches) endTouch(t.identifier); }, { passive:false });
+
+cvs.addEventListener('mousedown', e => startTouch(e.clientX, e.clientY, 'm'));
+cvs.addEventListener('mousemove', e => moveTouch(e.clientX, e.clientY, 'm'));
+window.addEventListener('mouseup', () => endTouch('m'));
+
+function screenDirToWorld(dx, dy){
+  const d = Math.hypot(dx, dy) || 1;
+  return { x: dx / d, y: dy / d };
+}
+
+// ---------- Kick with curve ----------
+const MAX_KICK = 640;
+const ASSIST = 100;
+const GRAV_Z = 640;
+const MAX_SPIN = 1.1;
+
+function swipeAngleOf(pts, i0, i1){
+  const a = pts[Math.max(0, i0)], b = pts[Math.min(pts.length - 1, i1)];
+  return Math.atan2(b.y - a.y, b.x - a.x);
+}
+function signedAngleDiff(a, b){
+  let d = b - a;
+  while (d >  Math.PI) d -= 2 * Math.PI;
+  while (d < -Math.PI) d += 2 * Math.PI;
+  return d;
+}
+
+function tryKick(){
+  if (gameState !== 'playing') return;
+  if (swipe.pts.length < 2) return;
+  const pts = swipe.pts;
+  const a = pts[0], b = pts[pts.length - 1];
+  const dt = Math.max((b.t - a.t) / 1000, 0.016);
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 18) return;
+
+  if (ball.state !== 'held'){
+    kickFlash = -1; setTimeout(() => kickFlash = 0, 220);
+    return;
+  }
+
+  // Remember which quadrant the shot was taken from (for the Level 1 bonus).
+  kickStartSector = sectorAt(player.x, player.y);
+
+  const fingerSpeed = Math.min(dist / dt, 3200);
+  const power = Math.min(110 + fingerSpeed * 0.17, MAX_KICK);
+
+  let spin = 0;
+  if (pts.length >= 6){
+    const n = pts.length;
+    const aStart = swipeAngleOf(pts, 0, Math.floor(n / 3));
+    const aEnd   = swipeAngleOf(pts, Math.floor(2 * n / 3), n - 1);
+    const turn = signedAngleDiff(aStart, aEnd);
+    spin = Math.max(-MAX_SPIN, Math.min(MAX_SPIN, turn * 2.0));
+  }
+
+  const n = pts.length;
+  const a0 = swipeAngleOf(pts, 0, Math.max(1, Math.floor(n / 3)));
+  const dir = { x: Math.cos(a0), y: Math.sin(a0) };
+
+  ball.state = 'flight';
+  ball.vx = dir.x * power;
+  ball.vy = dir.y * power;
+  ball.vz = 90 + power * 0.26;
+  ball.spin = spin;
+  ball.stealGrace = 0.25;
+  player.face = Math.atan2(dir.y, dir.x);
+  drip.armed = false;
+
+  kickFlash = 1; setTimeout(() => kickFlash = 0, 150);
+  if (navigator.vibrate) navigator.vibrate(20);
+  const p = toScreen(ball.x, ball.y, ball.z);
+  spawnParticles(p.x, p.y, 6, 'rgba(255,224,138,.9)');
+}
+
+// ---------- Dribble touch ----------
+// While moving with the ball, a touch pushes it ahead in the direction of travel
+// and breaks possession for a beat. Standing still keeps the ball tucked.
+function doDribbleTouch(){
+  if (keeper.holdT > 0) return;
+  ball.state = 'dribble';
+  ball.vx = Math.cos(player.face) * player.speed * 1.20;
+  ball.vy = Math.sin(player.face) * player.speed * 1.20;
+  ball.vz = 0; ball.spin = 0;
+  ball.stealGrace = 0.15;
+  drip.wait = 0.28;                 // possession is broken for ~0.28s
+  drip.armed = false;
+  if (navigator.vibrate) navigator.vibrate(5);
+}
+
+// ---------- Particles / messages ----------
+function spawnParticles(x, y, n, color){
+  for (let i = 0; i < n; i++){
+    const ang = Math.random() * Math.PI * 2, s = 60 + Math.random() * 160;
+    particles.push({ x, y, vx: Math.cos(ang)*s, vy: Math.sin(ang)*s, life: .5 + Math.random()*.3, color });
+  }
+}
+let msgTimer = null;
+function showMsg(text){
+  msgEl.textContent = text;
+  msgEl.classList.add('show');
+  clearTimeout(msgTimer);
+  msgTimer = setTimeout(() => msgEl.classList.remove('show'), 900);
+}
+
+// ---------- Scoring ----------
+function onGoal(){
+  let pts = 1, tag = 'GOAL!';
+  if (level === 1){
+    const cur = sectorAt(player.x, player.y);
+    if (kickStartSector >= 0 && cur !== lastSector){
+      pts = 2; tag = 'GOAL ×2!';
+    }
+  } else {
+    // Which goal quadrant did the ball cross into? (0=TL 1=TR 2=BL 3=BR)
+    const gx = (ball.x - goal.x) / goal.w;
+    const half = gx < 0.5 ? 0 : 1;
+    const row = ball.z >= goal.barH / 2 ? 0 : 1;
+    const z = row * 2 + half;
+    if (z === zoneIdx){ pts = 2; tag = 'TARGET ×2!'; }
+  }
+  score += pts;
+  scoreEl.textContent = score;
+  showMsg(tag);
+  const p = toScreen(ball.x, 0, ball.z);
+  spawnParticles(p.x, p.y, pts === 2 ? 34 : 26, pts === 2 ? 'rgba(255,224,138,.95)' : 'rgba(255,159,69,.95)');
+  if (navigator.vibrate) navigator.vibrate(pts === 2 ? [30, 40, 90] : [30, 40, 60]);
+  respawnBall();
+}
+
+// ---------- Keeper (Level 2) ----------
+function updateKeeper(dt){
+  keeper.animT += dt;
+  if (keeper.cooldown > 0) keeper.cooldown -= dt;
+  if (keeper.lunge > 0) keeper.lunge -= dt;
+
+  // If the keeper has stolen the ball, hold it briefly, then boot it back into play.
+  if (keeper.holdT > 0){
+    keeper.holdT -= dt;
+    ball.x = keeper.x; ball.y = keeper.y + 10; ball.z = 0;
+    ball.vx = 0; ball.vy = 0; ball.vz = 0;
+    if (keeper.holdT <= 0){
+      const dir = screenDirToWorld(player.x - keeper.x, 140 - keeper.y);
+      ball.state = 'free';
+      ball.vx = dir.x * 210; ball.vy = dir.y * 210;
+      ball.stealGrace = 0.6;
+      keeper.cooldown = 0.8;
+    }
+    return;
+  }
+
+  // Track the ball laterally along the goal line.
+  const targetX = Math.max(goal.x + 10, Math.min(goal.x + goal.w - 10, ball.x));
+  const track = (ball.state === 'flight' ? KEEPER_TRACK_SPEED * 1.8 : KEEPER_TRACK_SPEED);
+  const dx = targetX - keeper.x;
+  keeper.x += Math.max(-track * dt, Math.min(track * dt, dx));
+  keeper.x += Math.sin(keeper.animT * 2.2) * 9 * dt;   // subtle shuffle
+
+  // Lunge: block a fast incoming shot.
+  if (ball.state === 'flight' && ball.stealGrace <= 0 && keeper.cooldown <= 0 && keeper.lunge <= 0){
+    const d = Math.hypot(ball.x - keeper.x, ball.y - keeper.y);
+    const incoming = ball.y < 150 && ball.vy < -40 && ball.z < goal.barH * 0.95;
+    if (incoming && d < 95){
+      keeper.lunge = 0.22;
+      keeper.lungeVx = Math.sign(ball.x - keeper.x) * KEEPER_LUNGE_SPEED;
+    }
+  }
+  if (keeper.lunge > 0) keeper.x += keeper.lungeVx * dt;
+
+  // Steal: poke the ball off the player's dribble near the box.
+  if ((ball.state === 'held' || ball.state === 'dribble') && keeper.cooldown <= 0){
+    const d = Math.hypot(ball.x - keeper.x, ball.y - keeper.y);
+    const stealR = ball.state === 'dribble' ? keeper.r + ball.r + 10 : keeper.r + ball.r + 2;
+    if (d < stealR && ball.stealGrace <= 0){
+      ball.state = 'keeper';
+      keeper.holdT = KEEPER_HOLD_TIME;
+      keeperFlash = 1; setTimeout(() => keeperFlash = 0, 180);
+      showMsg('STOLEN!');
+      if (navigator.vibrate) navigator.vibrate([40, 30, 40]);
+      drip.armed = false;
+      return;
+    }
+  }
+
+  // Save: block a shot on the line.
+  if (ball.state === 'flight' && ball.stealGrace <= 0 && ball.z < goal.barH * 0.9){
+    const d = Math.hypot(ball.x - keeper.x, ball.y - keeper.y);
+    if (d < keeper.r + ball.r + 3 && Math.hypot(ball.vx, ball.vy) > 60){
+      ball.vy = Math.max(120, Math.abs(ball.vy) * 0.62 + 90);   // parry back downfield
+      ball.y = Math.max(ball.y, keeper.y + 10);                  // keep it out of the goal line
+      ball.vx = (ball.x - keeper.x) * 5 + (Math.random() - 0.5) * 120;
+      ball.vz = Math.max(ball.vz, 140);
+      ball.spin = 0;
+      ball.state = 'flight';
+      ball.stealGrace = 0.45;
+      keeper.lunge = 0; keeper.cooldown = 0.35;
+      keeperFlash = 1; setTimeout(() => keeperFlash = 0, 180);
+      showMsg('SAVED!');
+      const p = toScreen(ball.x, ball.y, ball.z);
+      spawnParticles(p.x, p.y, 14, 'rgba(229,72,77,.9)');
+      if (navigator.vibrate) navigator.vibrate([50, 20, 30]);
+    }
+  }
+}
+
+// ---------- Update ----------
+function update(dt){
+  if (gameState !== 'playing') return;
+
+  timeLeft -= dt;
+  const shown = Math.max(0, Math.ceil(timeLeft));
+  if (timerEl.textContent != shown) timerEl.textContent = shown;
+  if (timeLeft <= 5.5) timerEl.classList.add('low');
+  if (timeLeft <= 0){ endRound(); return; }
+
+  if (ball.stealGrace > 0) ball.stealGrace -= dt;
+  if (zoneFlash > 0) zoneFlash -= dt;
+
+  // Player movement
+  player.moving = false;
+  if (joy.active && Math.hypot(joy.dx, joy.dy) > joy.max * 0.06){
+    const mag = Math.hypot(joy.dx, joy.dy) / joy.max;
+    const dir = screenDirToWorld(joy.dx, joy.dy);
+    player.x += dir.x * player.speed * mag * dt;
+    player.y += dir.y * player.speed * mag * dt;
+    player.face = Math.atan2(dir.y, dir.x);
+    player.moving = true; player.mag = mag;
+  }
+  player.x = Math.max(player.r, Math.min(world.w - player.r, player.x));
+  player.y = Math.max(player.r, Math.min(world.h - player.r, player.y));
+  player.animT += dt * (player.moving ? (0.6 + player.mag) : 0.35);
+
+  if (ball.state === 'held'){
+    if (drip.wait > 0){ drip.wait -= dt; }
+    else if (player.moving && drip.armed){ doDribbleTouch(); }
+    else if (!player.moving){ drip.armed = true; }
+    else {
+      const off = player.r + ball.r - 1;
+      ball.x = player.x + Math.cos(player.face) * off;
+      ball.y = player.y + Math.sin(player.face) * off;
+      ball.z = 0; ball.vx = 0; ball.vy = 0; ball.vz = 0; ball.spin = 0;
+      ball.x = Math.max(ball.r, Math.min(world.w - ball.r, ball.x));
+      ball.y = Math.max(ball.r, Math.min(world.h - ball.r, ball.y));
+    }
+  }
+
+  if (ball.state !== 'held' && ball.state !== 'keeper'){
+    if (ball.state === 'flight'){
+      if (ball.spin !== 0){
+        const rot = ball.spin * dt;
+        const c = Math.cos(rot), s = Math.sin(rot);
+        const nvx = ball.vx * c - ball.vy * s;
+        const nvy = ball.vx * s + ball.vy * c;
+        ball.vx = nvx; ball.vy = nvy;
+        ball.spin *= Math.pow(0.32, dt);
+      }
+      const gx = goal.x + goal.w / 2, gy = 0;
+      const adx = gx - ball.x, ady = gy - ball.y;
+      const ad = Math.hypot(adx, ady) || 1;
+      ball.vx += (adx / ad) * ASSIST * dt;
+      ball.vy += (ady / ad) * ASSIST * dt;
+    }
+
+    ball.x += ball.vx * dt;
+    ball.y += ball.vy * dt;
+    if (ball.state === 'flight'){
+      ball.z += ball.vz * dt;
+      ball.vz -= GRAV_Z * dt;
+      if (ball.z <= 0){
+        ball.z = 0;
+        if (Math.abs(ball.vz) > 60){ ball.vz = -ball.vz * 0.45; }
+        else ball.vz = 0;
+      }
+    }
+    const fr = Math.pow(ball.state === 'dribble' ? 0.30 : 0.42, dt);
+    ball.vx *= fr; ball.vy *= fr;
+
+    if (Math.hypot(ball.vx, ball.vy) < 8 && ball.z === 0 && Math.abs(ball.vz) < 1 &&
+        ball.state !== 'dribble'){
+      ball.vx = 0; ball.vy = 0; ball.vz = 0; ball.spin = 0;
+      ball.state = 'free';
+    }
+
+    // Re-collect the ball after a dribble touch or when loose.
+    const pd = Math.hypot(ball.x - player.x, ball.y - player.y);
+    const dribbleDone = ball.state === 'dribble' && drip.wait <= 0;
+    const canGrab = ball.state === 'free' || dribbleDone ||
+                    (ball.state === 'flight' && ball.z < 6 && Math.hypot(ball.vx, ball.vy) < 170);
+    // During a dribble, require the ball to have moved a little away from the player first
+    // (otherwise it auto-catches immediately and kills the touch feel).
+    const dribbleRecoverable = dribbleDone && pd > player.r + ball.r + 3;
+    if ((ball.state === 'free' || dribbleRecoverable ||
+         (ball.state === 'flight' && ball.z < 6 && Math.hypot(ball.vx, ball.vy) < 170)) &&
+        pd < player.r + ball.r + 6 && keeper.holdT <= 0){
+      ball.state = 'held';
+      ball.spin = 0;
+      drip.armed = true;                    // next motion triggers a touch
+      if (navigator.vibrate) navigator.vibrate(8);
+    }
+    if (ball.state === 'dribble' && Math.hypot(ball.vx, ball.vy) < 8){
+      ball.state = 'free'; ball.vx = 0; ball.vy = 0; drip.wait = 0;
+    }
+  }
+
+  if (level === 2) updateKeeper(dt);
+
+  // Goal
+  if (ball.state === 'flight' && ball.y - ball.r < 0){
+    const inMouth = ball.x > goal.x + 2 && ball.x < goal.x + goal.w - 2;
+    if (inMouth && ball.z < goal.barH && ball.vy < 0){
+      onGoal();
+    }
+  }
+  // Out of bounds
+  if (ball.state !== 'held' && ball.state !== 'keeper' &&
+      (ball.x + ball.r < 0 || ball.x - ball.r > world.w ||
+       ball.y + ball.r < 0 || ball.y - ball.r > world.h)){
+    showMsg('OUT');
+    respawnBall();
+  }
+
+  for (const p of particles){
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vx *= 0.92; p.vy *= 0.92;
+    p.life -= dt;
+  }
+  particles = particles.filter(p => p.life > 0);
+
+  if (sectorFlash.t > 0) sectorFlash.t -= dt;
+}
+
+// ---------- Draw helpers ----------
+function pathQuad(x0, y0, x1, y1){
+  const a = toScreen(x0, y0), b = toScreen(x1, y0), c = toScreen(x1, y1), d = toScreen(x0, y1);
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y);
+  ctx.closePath();
+}
+function groundEllipse(wx, wy, rWorld, squash = 1){
+  const p = toScreen(wx, wy);
+  ctx.beginPath();
+  ctx.ellipse(p.x, p.y, rWorld * p.s * squash, rWorld * p.s * squash * 0.38, 0, 0, Math.PI * 2);
+}
+
+// ---------- NES-style sprite ----------
+// 16x22 pixel-art character, drawn from string rows with a palette.
+// Frames: two running poses + one standing pose, each in 8 facings.
+const SPR_PAL = {
+  K:'#20242b', S:'#c98b5e', H:'#181818', B:'#4fc3f7', b:'#2f8fb8',
+  W:'#f0f6eb', N:'#c98b5e', O:'#e5484d', G:'#3b3f46'
+};
+const SPR_H = 22, SPR_W = 16;
+
+// Base body template (head/arms/torso); legs and direction details get stamped on.
+function buildBody(){
+  return [
+    '....HHHHHH......',
+    '...HHHHHHHH.....',
+    '...HSSSSSSH.....',
+    '...SSSSSSSS.....',
+    '...SSKSSKSS.....',
+    '....SSSSSS......',
+    '.....SSSS.......',
+    '..KBBBBBBBK.....',
+    '.KBBBBBBBBBK....',
+    '.KBBWWWWBBBK....',
+    '.KBBWWWWBBBK....',
+    '.KBBBBBBBBBK....',
+    '..KBBBBBBBK.....',
+    '...bbbbbb.......',
+    '...bbbbbb.......',
+    '...bbbbbb.......',
+  ];
+}
+// Legs per animation frame (6 rows). N = sock color, G = boot.
+const SPR_LEGS = {
+  stand: [
+    '....NN..NN......',
+    '....NN..NN......',
+    '....NN..NN......',
+    '....WW..WW......',
+    '...GGG..GGG.....',
+    '...GGG..GGG.....',
+  ],
+  runA: [
+    '...NN....NN.....',
+    '..NN......NN....',
+    '..NN.......NN...',
+    '..WW........WW..',
+    '.GGG........GGG.',
+    '.GGG........GGG.',
+  ],
+  runB: [
+    '.....NN.NN......',
+    '......NNN.......',
+    '......NNN.......',
+    '......WWW.......',
+    '.....GGGGG......',
+    '.....GG.GG......',
+  ],
+};
+
+// Compose a full frame: body + legs, with a simple facing tweak on the head.
+function makeFrame(legs, face){
+  const rows = buildBody().concat(SPR_LEGS[legs]);
+  const grid = rows.map(r => r.split(''));
+  // Eyes look toward travel direction.
+  const eyeRow = 4;
+  grid[eyeRow] = '...SSSSSSSS.....'.split('');
+  const ex = { left: [4, 6], right: [9, 11], up: [], down: [5, 10] };
+  let eyes = ex.down;
+  if (face === 'left') eyes = ex.left;
+  else if (face === 'right') eyes = ex.right;
+  else if (face === 'up') eyes = ex.up;
+  for (const cx of eyes) grid[eyeRow][cx] = 'K';
+  return grid;
+}
+
+const sprCache = new Map();
+function spriteFor(legs, face){
+  const key = legs + ':' + face;
+  if (sprCache.has(key)) return sprCache.get(key);
+  const grid = makeFrame(legs, face);
+  const off = document.createElement('canvas');
+  off.width = SPR_W; off.height = SPR_H;
+  const g = off.getContext('2d');
+  for (let y = 0; y < SPR_H; y++){
+    for (let x = 0; x < SPR_W; x++){
+      const c = SPR_PAL[grid[y][x]];
+      if (!c) continue;
+      g.fillStyle = c;
+      g.fillRect(x, y, 1, 1);
+    }
+  }
+  sprCache.set(key, off);
+  return off;
+}
+
+function facingName(ang){
+  const deg = ang * 180 / Math.PI;
+  if (deg > -135 && deg <= -45) return 'up';
+  if (deg > -45 && deg <= 45) return 'right';
+  if (deg > 45 && deg <= 135) return 'down';
+  return 'left';
+}
+
+function drawSprite(wx, wy, animT, moving, face, scale, kitColor){
+  const p = toScreen(wx, wy);
+  const s = p.s * scale;
+  const u = Math.max(1, Math.round(2.2 * s));      // chunky pixel size, snapped
+  const movingFast = moving;
+  const frame = !movingFast ? 'stand'
+    : (Math.floor(animT * 8) % 2 === 0 ? 'runA' : 'runB');
+  const img = spriteFor(frame, facingName(face));
+  const dw = SPR_W * u, dh = SPR_H * u;
+  const dx = Math.round(p.x - dw / 2), dy = Math.round(p.y - dh);
+
+  groundEllipse(wx, wy, 11 * scale);
+  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fill();
+
+  // Recolor kit if a custom color is set.
+  if (kitColor){
+    // cheap tint: draw sprite, then overlay kit color on body band
+    ctx.drawImage(img, dx, dy, dw, dh);
+    ctx.globalCompositeOperation = 'source-atop';
+    ctx.globalCompositeOperation = 'source-over';
+  } else {
+    ctx.drawImage(img, dx, dy, dw, dh);
+  }
+  return { p, u, dx, dy, dw, dh };
+}
+
+// ---------- Draw ----------
+function draw(){
+  ctx.clearRect(0, 0, W, H);
+
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#0e1a13');
+  bg.addColorStop(1, '#0a0f0c');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+  const glow = ctx.createLinearGradient(0, horizonY - 40, 0, horizonY + 60);
+  glow.addColorStop(0, 'rgba(255,224,138,0)');
+  glow.addColorStop(0.5, 'rgba(255,224,138,.06)');
+  glow.addColorStop(1, 'rgba(255,224,138,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, horizonY - 40, W, 100);
+
+  const css = k => getComputedStyle(document.documentElement).getPropertyValue(k);
+
+  const stripes = 7, sh = world.h / stripes;
+  for (let i = 0; i < stripes; i++){
+    pathQuad(0, i * sh, world.w, (i + 1) * sh);
+    ctx.fillStyle = i % 2 ? css('--pitch-2') : css('--pitch');
+    ctx.fill();
+  }
+
+  ctx.strokeStyle = 'rgba(240,246,235,.85)';
+  ctx.lineWidth = 2.5;
+  pathQuad(0, 0, world.w, world.h);
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(240,246,235,.5)';
+  ctx.lineWidth = 1.8;
+  pathQuad(goal.x - 26, 0, goal.x + goal.w + 26, 90);
+  ctx.stroke();
+
+  // Sector grid + spawn highlight
+  ctx.strokeStyle = 'rgba(240,246,235,.10)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < SECTOR_COLS * SECTOR_ROWS; i++){
+    const b = sectorBounds(i);
+    pathQuad(b.x0, b.y0, b.x1, b.y1);
+    ctx.stroke();
+  }
+  if (sectorFlash.t > 0 && sectorFlash.idx >= 0){
+    const b = sectorBounds(sectorFlash.idx);
+    const a = Math.min(1, sectorFlash.t / 1.2);
+    pathQuad(b.x0, b.y0, b.x1, b.y1);
+    ctx.fillStyle = 'rgba(255,224,138,' + (0.10 * a).toFixed(3) + ')';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,224,138,' + (0.55 * a).toFixed(3) + ')';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  // Level 1: show the active pickup quadrant label.
+  if (level === 1 && gameState === 'playing'){
+    const b = sectorBounds(lastSector);
+    const c = toScreen((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2);
+    ctx.font = '700 ' + Math.max(11, 13 * c.s) + 'px -apple-system,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,224,138,.35)';
+    ctx.fillText('PICK UP HERE', c.x, c.y);
+    ctx.fillStyle = 'rgba(240,246,235,.30)';
+    ctx.font = '600 ' + Math.max(9, 10 * c.s) + 'px -apple-system,sans-serif';
+    ctx.fillText('shoot from elsewhere = ×2', c.x, c.y + 14 * c.s);
+  }
+
+  // ---- Goal ----
+  const g0 = toScreen(goal.x, 0), g1 = toScreen(goal.x + goal.w, 0);
+  const g0t = toScreen(goal.x, 0, goal.barH), g1t = toScreen(goal.x + goal.w, 0, goal.barH);
+  const nb0 = toScreen(goal.x + 10, -26, goal.barH * 0.8), nb1 = toScreen(goal.x + goal.w - 10, -26, goal.barH * 0.8);
+  ctx.strokeStyle = 'rgba(240,246,235,.25)';
+  ctx.lineWidth = 1;
+  const netN = 12;
+  for (let i = 0; i <= netN; i++){
+    const t = i / netN;
+    const fx = g0.x + (g1.x - g0.x) * t;
+    const ftx = g0t.x + (g1t.x - g0t.x) * t, fty = g0t.y;
+    const bx = nb0.x + (nb1.x - nb0.x) * t, by = nb0.y;
+    ctx.beginPath(); ctx.moveTo(fx, g0.y); ctx.lineTo(ftx, fty); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ftx, fty); ctx.lineTo(bx, by); ctx.stroke();
+  }
+  for (let j = 1; j <= 4; j++){
+    const z = (goal.barH * j) / 5;
+    const l = toScreen(goal.x, 0, z), r = toScreen(goal.x + goal.w, 0, z);
+    ctx.beginPath(); ctx.moveTo(l.x, l.y); ctx.lineTo(r.x, r.y); ctx.stroke();
+  }
+
+  // Level 2: goal target-zone overlay (2x2 quadrants, one highlighted).
+  if (level === 2 && gameState === 'playing'){
+    const zc = zoneIdx % 2, zr = Math.floor(zoneIdx / 2);
+    const zx0 = goal.x + (goal.w / 2) * zc, zx1 = zx0 + goal.w / 2;
+    const zz0 = zr === 0 ? goal.barH / 2 : 0, zz1 = zr === 0 ? goal.barH : goal.barH / 2;
+    const a = toScreen(zx0, 0, zz1), b = toScreen(zx1, 0, zz1);
+    const c = toScreen(zx1, 0, zz0), d = toScreen(zx0, 0, zz0);
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 180);
+    const al = 0.16 + 0.10 * pulse + Math.max(0, zoneFlash) * 0.25;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255,224,138,' + al.toFixed(3) + ')';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,224,138,.75)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.font = '800 ' + Math.max(9, 11 * a.s) + 'px -apple-system,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(20,24,20,.85)';
+    ctx.fillText('×2', (a.x + c.x) / 2, (a.y + c.y) / 2 + 4);
+  }
+
+  ctx.strokeStyle = css('--chalk');
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(g0.x, g0.y); ctx.lineTo(g0t.x, g0t.y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(g1.x, g1.y); ctx.lineTo(g1t.x, g1t.y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(g0t.x, g0t.y); ctx.lineTo(g1t.x, g1t.y); ctx.stroke();
+  if (ball.state === 'flight'){
+    ctx.strokeStyle = 'rgba(255,224,138,.35)';
+    ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(g0.x, g0.y); ctx.lineTo(g1.x, g1.y); ctx.stroke();
+  }
+
+  // ---- Entities (depth-sorted) ----
+  const ents = [
+    { y: player.y, fn: drawPlayer },
+    { y: ball.y, fn: drawBall },
+  ];
+  if (level === 2) ents.push({ y: keeper.y, fn: drawKeeper });
+  ents.sort((a, b) => a.y - b.y);
+  for (const e of ents) e.fn();
+
+  function drawPlayer(){
+    const d = drawSprite(player.x, player.y, player.animT, player.moving, player.face, 1.0);
+    // Possession ring only when the ball is truly held.
+    if (ball.state === 'held'){
+      groundEllipse(player.x, player.y, player.r * 1.5);
+      ctx.strokeStyle = kickFlash === 1 ? 'rgba(255,224,138,.95)' : 'rgba(255,224,138,.35)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 7]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (kickFlash === -1){
+      ctx.font = '700 12px -apple-system,sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(255,107,107,.9)';
+      ctx.fillText('no ball!', d.p.x, d.dy - 8);
+    }
+  }
+
+  function drawKeeper(){
+    const flash = keeperFlash === 1;
+    const d = drawSprite(keeper.x, keeper.y, keeper.animT, true, Math.PI / 2, 0.95);
+    // Gloves / keeper cue
+    ctx.beginPath();
+    ctx.arc(d.p.x, d.dy + d.dh * 0.42, 5 * d.u * 0.5 + 4, 0, Math.PI * 2);
+    ctx.strokeStyle = flash ? 'rgba(255,224,138,.95)' : 'rgba(229,72,77,.8)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    if (flash){
+      ctx.font = '800 13px -apple-system,sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(255,224,138,.95)';
+      ctx.fillText('!', d.p.x, d.dy - 6);
+    }
+  }
+
+  function drawBall(){
+    if (keeper.holdT > 0){
+      // Keeper holds the ball — draw it at his feet, blinking.
+      if (Math.floor(performance.now() / 120) % 2 === 0) return;
+    }
+    const p = toScreen(ball.x, ball.y, ball.z);
+    groundEllipse(ball.x, ball.y, ball.r * 0.8, Math.max(0.4, 1 - ball.z / 90));
+    ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fill();
+    const br = ball.r * p.s;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y - br * 0.6, br, 0, Math.PI * 2);
+    ctx.fillStyle = css('--ball'); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.4)'; ctx.lineWidth = Math.max(1, 1.5 * p.s); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(p.x - br * 0.7, p.y - br * 0.9);
+    ctx.quadraticCurveTo(p.x, p.y - br * 0.3, p.x + br * 0.7, p.y - br * 0.9);
+    ctx.stroke();
+    if (ball.state === 'flight' && Math.abs(ball.spin) > 0.3){
+      ctx.beginPath();
+      ctx.arc(p.x, p.y - br * 0.6, br + 3, -0.6, 0.9);
+      ctx.strokeStyle = 'rgba(255,224,138,.5)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    // Dribble: brief "loose" glint while possession is broken.
+    if (ball.state === 'dribble' && drip.wait > 0){
+      ctx.beginPath();
+      ctx.arc(p.x, p.y - br * 0.6, br + 4, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,.28)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  }
+
+  for (const p of particles){
+    ctx.globalAlpha = Math.max(p.life, 0);
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = p.color; ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  if (joy.active){
+    ctx.beginPath(); ctx.arc(joy.ox, joy.oy, joy.max, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(240,246,235,.25)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.beginPath(); ctx.arc(joy.ox + joy.dx, joy.oy + joy.dy, 24, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(240,246,235,.30)'; ctx.fill();
+  }
+
+  if (swipe.active && swipe.pts.length > 1){
+    ctx.beginPath();
+    ctx.moveTo(swipe.pts[0].x, swipe.pts[0].y);
+    for (const pt of swipe.pts) ctx.lineTo(pt.x, pt.y);
+    ctx.strokeStyle = 'rgba(255,224,138,.6)';
+    ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.stroke();
+  }
+}
+
+// ---------- Loop ----------
+let last = performance.now();
+function loop(now){
+  const dt = Math.min((now - last) / 1000, 0.033);
+  last = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+resize();
+respawnBall();
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

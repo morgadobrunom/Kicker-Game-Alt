@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Street Goal — Versions</title>
+<style>
+  :root{
+    --night:#0b1410;
+    --pitch:#15381f;
+    --pitch-2:#123219;
+    --chalk:#f0f6eb;
+    --accent:#ffe08a;
+    --kit:#4fc3f7;
+    --danger:#ff6b6b;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden;background:var(--night);
+    font-family:-apple-system,'SF Pro Rounded','Segoe UI',Roboto,sans-serif;
+    touch-action:manipulation;overscroll-behavior:none;user-select:none;-webkit-user-select:none}
+  #wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;
+    min-height:100%;padding:24px;text-align:center}
+  h1{font-size:38px;letter-spacing:4px;font-weight:800;color:var(--chalk);margin-bottom:8px}
+  p.sub{color:var(--chalk);opacity:.65;font-size:14px;line-height:1.5;margin-bottom:34px;max-width:320px}
+  .versions{display:flex;flex-direction:column;gap:14px;width:100%;max-width:340px}
+  .v{position:relative;display:flex;flex-direction:column;gap:4px;
+    border:2px solid rgba(240,246,235,.22);border-radius:16px;
+    background:linear-gradient(135deg, rgba(21,56,31,.55), rgba(18,50,25,.45));
+    padding:18px 20px;text-decoration:none;color:var(--chalk);
+    transition:transform .12s ease, border-color .12s ease, background .12s ease}
+  .v:active{transform:scale(.97)}
+  .v:hover, .v:focus{border-color:rgba(255,224,138,.55);background:linear-gradient(135deg, rgba(21,56,31,.72), rgba(18,50,25,.62))}
+  .v-title{display:flex;align-items:center;justify-content:space-between;font-size:18px;font-weight:800;letter-spacing:1px}
+  .v-tag{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;
+    padding:4px 8px;border-radius:6px;background:rgba(255,224,138,.15);color:var(--accent)}
+  .v-desc{font-size:13px;opacity:.72;line-height:1.5;text-align:left}
+  .ball{position:fixed;bottom:22px;right:22px;width:28px;height:28px;border-radius:50%;
+    background:radial-gradient(circle at 35% 35%, #ffb366, #ff9f45 60%, #d67a2e);
+    box-shadow:0 4px 12px rgba(0,0,0,.4)}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <h1>STREET GOAL</h1>
+  <p class="sub">Choose a prototype version to play. Each version adds new mechanics on top of the previous one.</p>
+  <div class="versions">
+    <a class="v" href="street-goal-arcade.html">
+      <span class="v-title">Version 1 <span class="v-tag">Classic</span></span>
+      <span class="v-desc">Original arcade loop: joystick movement, swipe to shoot, curved shots, 2×2 sector respawns, and 30-second rounds.</span>
+    </a>
+    <a class="v" href="street-goal-arcade-v2.html">
+      <span class="v-title">Version 2 <span class="v-tag">Features</span></span>
+      <span class="v-desc">Adds NES-style player sprite, dribble-touch mechanic, quadrant ×2 bonus, Level 2 with goal target zones and a goalkeeper.</span>
+    </a>
+    <a class="v" href="street-goal-arcade-v3.html">
+      <span class="v-title">Version 3 <span class="v-tag">Tuned</span></span>
+      <span class="v-desc">Smaller, smoother player resize range and a gentler dribble nudge with a 600 ms cooldown.</span>
+    </a>
+  </div>
+</div>
+<div class="ball" aria-hidden="true"></div>
+</body>
+</html>
