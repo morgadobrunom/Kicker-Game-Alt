@@ -91,10 +91,10 @@ const ovSub = document.getElementById('ov-sub');
 const ovScore = document.getElementById('ov-score');
 
 // ---------- Perspective camera ----------
-const world = { w: 550, h: 1300 };
-const goal  = { x: 0, w: 220, barH: 60 };
+const world = { w: 400, h: 910 };
+const goal  = { x: 0, w: 180, barH: 60 };
 let W = 0, H = 0, DPR = 1;
-let F = 1, D0 = 2000, hCam = 1, horizonY = 0;
+let F = 1, D0 = 1250, hCam = 1, horizonY = 0;
 let gNearScale = 1;     // current near-edge perspective scale for sprite clamping
 
 function scaleAt(wy){ return F / (D0 + world.h - wy); }
@@ -139,7 +139,7 @@ let boost = { available: true, active: false, timer: 0, multiplier: 1.55 };
 let tutorial = { step: 0, done: false, hint: '' };
 let powerUp = { active: false, x: 0, y: 0, r: 12, spawnT: 0 };
 
-const player = { x: world.w/2, y: world.h*0.78, r: 15, speed: 320,
+const player = { x: world.w/2, y: world.h*0.78, r: 15, speed: 252,
                  face: -Math.PI/2, moving: false, mag: 0, animT: 0,
                  visualScale: 1 };
 const ball = { x: world.w/2, y: world.h*0.5, z: 0, r: 9,
@@ -420,6 +420,7 @@ function tone(freq, dur, type, gain, slideTo){
 function sKick(){ tone(220, 0.12, 'square', 0.18, 70); }      // punchy thump
 function sSave(){ tone(110, 0.28, 'sawtooth', 0.22, 55); }    // low parry thud
 function sTick(){ tone(1050, 0.06, 'square', 0.10); }         // clock tick
+function sGoal(){ tone(880, 0.18, 'square', 0.20, 1760); tone(660, 0.22, 'square', 0.14, 1320); } // bright double-chime
 
 // ---------- Tap-to-move input ----------
 // v14: the whole canvas is a touch surface. A short tap sets the player's destination
@@ -536,8 +537,8 @@ function tryKick(){
   if (dist < 18) return;
 
   // v4: allow kicking from a slightly larger radius; snap a nearby ball to the
-  // player's feet before launching the shot.
-  const kickR = player.r + ball.r + 14;
+  // player's feet before launching the shot. v14: +10% interaction box.
+  const kickR = player.r + ball.r + 18;
   const pd = Math.hypot(ball.x - player.x, ball.y - player.y);
   if (ball.state !== 'held'){
     if (pd > kickR || keeper.holdT > 0){
@@ -655,6 +656,7 @@ function onGoal(){
   score += pts;
   scoreEl.textContent = score;
   showMsg(tag);
+  sGoal();
   const p = toScreen(ball.x, 0, ball.z);
   spawnParticles(p.x, p.y, pts === 2 ? 34 : 26, pts === 2 ? 'rgba(255,224,138,.95)' : 'rgba(255,159,69,.95)');
   if (navigator.vibrate) navigator.vibrate(pts === 2 ? [30, 40, 90] : [30, 40, 60]);
@@ -929,7 +931,7 @@ function update(dt){
     const pd = Math.hypot(ball.x - player.x, ball.y - player.y);
     const canGrab = ball.state === 'free' ||
                     (ball.state === 'flight' && ball.z < 6 && Math.hypot(ball.vx, ball.vy) < 170);
-    if (canGrab && pd < player.r + ball.r + 6 && keeper.holdT <= 0){
+    if (canGrab && pd < player.r + ball.r + 9 && keeper.holdT <= 0){
       ball.state = 'held';
       ball.spin = 0;
       drip.armed = true;                    // next motion triggers a touch
