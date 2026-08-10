@@ -102,12 +102,12 @@ function resize(){
   cvs.width = W * DPR; cvs.height = H * DPR;
   cvs.style.width = W + 'px'; cvs.style.height = H + 'px';
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  // v8: shift the field upward on the canvas for portrait play.
-  horizonY = H * 0.04;
+  // v8: field sits high on the canvas — near edge around 58% screen height.
+  horizonY = H * 0.02;
   const sNear = (W * 0.94) / world.w;
   gNearScale = sNear;
   F = sNear * D0;
-  hCam = (H * 0.86 - horizonY) / sNear;
+  hCam = (H * 0.58 - horizonY) / sNear;
   goal.x = (world.w - goal.w) / 2;
   // Goalkeeper area: a small box in front of the goal.
   keeperArea.x = Math.max(0, goal.x - 20);
