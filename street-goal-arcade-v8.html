@@ -83,10 +83,10 @@ const ovSub = document.getElementById('ov-sub');
 const ovScore = document.getElementById('ov-score');
 
 // ---------- Perspective camera ----------
-const world = { w: 400, h: 600 };
+const world = { w: 400, h: 690 };
 const goal  = { x: 0, w: 180, barH: 60 };
 let W = 0, H = 0, DPR = 1;
-let F = 1, D0 = 1400, hCam = 1, horizonY = 0;
+let F = 1, D0 = 1250, hCam = 1, horizonY = 0;
 let gNearScale = 1;     // current near-edge perspective scale for sprite clamping
 
 function scaleAt(wy){ return F / (D0 + world.h - wy); }
