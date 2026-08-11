@@ -118,12 +118,12 @@ function resize(){
   F = sNear * D0;
   hCam = (H * 0.58 - horizonY) / sNear;
   goal.x = (world.w - goal.w) / 2;
-  // Goalkeeper area: v15 box is 20% larger in both axes so the keeper can
+  // Goalkeeper area: v15 box enlarged again (~20% over previous) so the keeper can
   // step further into the court.
-  keeperArea.x = Math.max(0, goal.x - 24);
+  keeperArea.x = Math.max(0, goal.x - 29);
   keeperArea.y = 0;
-  keeperArea.w = Math.min(world.w - keeperArea.x, goal.w + 48);
-  keeperArea.h = 96;
+  keeperArea.w = Math.min(world.w - keeperArea.x, goal.w + 58);
+  keeperArea.h = 115;
 }
 window.addEventListener('resize', resize);
 
