@@ -478,7 +478,10 @@ function screenDirToWorld(dx, dy){
 
 // ---------- Kick with curve ----------
 const MAX_KICK = 640;
-const KICK_ZONE_TOP = 0.45;  // kick zones occupy the lower 55% of the screen
+const KICK_ZONE_TOP = 0.62;     // lower-right kick panel
+const KICK_ZONE_BOTTOM = 0.94;
+const KICK_ZONE_X = 0.52;
+const KICK_CHIP_RATIO = 0.6;    // chip & low strips are 60% the height of drive
 const ASSIST = 100;
 const GRAV_Z = 420;
 const MAX_SPIN = 1.1;
@@ -493,6 +496,28 @@ function signedAngleDiff(a, b){
   while (d >  Math.PI) d -= 2 * Math.PI;
   while (d < -Math.PI) d += 2 * Math.PI;
   return d;
+}
+
+function kickZoneRects(){
+  const zTop = H * KICK_ZONE_TOP, zBot = H * KICK_ZONE_BOTTOM;
+  const totalH = zBot - zTop;
+  const driveH = totalH / (KICK_CHIP_RATIO * 2 + 1);
+  const chipH = driveH * KICK_CHIP_RATIO;
+  const x0 = W * KICK_ZONE_X;
+  const chipY1 = zTop + chipH, driveY1 = chipY1 + driveH;
+  return [
+    { x0, x1: W, y0: zTop, y1: chipY1, label: 'CHIP', col: '255,224,138', type: 'chip' },
+    { x0, x1: W, y0: chipY1, y1: driveY1, label: 'DRIVE', col: '120,220,255', type: 'normal' },
+    { x0, x1: W, y0: driveY1, y1: zBot, label: 'LOW', col: '160,255,170', type: 'low' },
+  ];
+}
+
+function kickZoneAt(x, y){
+  if (x < W * KICK_ZONE_X) return 'normal';
+  for (const z of kickZoneRects()){
+    if (y >= z.y0 && y < z.y1) return z.type;
+  }
+  return 'normal';
 }
 
 function tryKick(){
@@ -523,12 +548,10 @@ function tryKick(){
   // Remember which quadrant the shot was taken from (for the Level 1 bonus).
   kickStartSector = sectorAt(player.x, player.y);
 
-  // v15: three shot-type zones on the lower-right of the canvas (see drawZones).
+  // v15: three shot-type zones on the lower-right of the canvas (see kickZoneRects).
   // Top = chip (high arc), middle = normal drive, bottom = low skimmer.
   // Power is a mixture of swipe speed and swipe distance, like v1.
-  const zTop = H * KICK_ZONE_TOP;
-  const zT = Math.max(0, Math.min(1, (pts[0].y - zTop) / (H - zTop)));
-  const zone = zT < 1 / 3 ? 'chip' : (zT > 2 / 3 ? 'low' : 'normal');
+  const zone = kickZoneAt(pts[0].x, pts[0].y);
   const fingerSpeed = Math.min(dist / dt, 3200);
   const power = Math.min(80 + fingerSpeed * 0.11 + dist * 0.55, MAX_KICK);
 
@@ -1314,22 +1337,16 @@ function draw(){
 
   // v15: permanent shot-type zones, lower-right of the screen — chip / drive / low.
   {
-    const zTop = H * KICK_ZONE_TOP, zh = (H - zTop) / 3;
-    const zones = [
-      { y0: zTop, y1: zTop + zh, label: 'CHIP', col: '255,224,138' },
-      { y0: zTop + zh, y1: zTop + zh * 2, label: 'DRIVE', col: '120,220,255' },
-      { y0: zTop + zh * 2, y1: H, label: 'LOW', col: '160,255,170' },
-    ];
-    ctx.font = '800 11px -apple-system,sans-serif';
+    ctx.font = '800 10px -apple-system,sans-serif';
     ctx.textAlign = 'right';
-    for (const z of zones){
+    for (const z of kickZoneRects()){
       ctx.fillStyle = 'rgba(' + z.col + ',0.05)';
-      ctx.fillRect(W / 2, z.y0, W / 2, z.y1 - z.y0);
+      ctx.fillRect(z.x0, z.y0, z.x1 - z.x0, z.y1 - z.y0);
       ctx.strokeStyle = 'rgba(' + z.col + ',0.16)';
       ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(W / 2, z.y1); ctx.lineTo(W, z.y1); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(z.x0, z.y1); ctx.lineTo(z.x1, z.y1); ctx.stroke();
       ctx.fillStyle = 'rgba(' + z.col + ',0.35)';
-      ctx.fillText(z.label, W - 10, (z.y0 + z.y1) / 2);
+      ctx.fillText(z.label, z.x1 - 8, (z.y0 + z.y1) / 2);
     }
   }
 
