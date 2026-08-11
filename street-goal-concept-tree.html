@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Street Goal — Concept Mindmap</title>
+<style>
+  :root{
+    --paper:#f7f6f2;
+    --panel:#ffffff;
+    --ink:#1b2419;
+    --accent:#2f7a3d;
+    --line:#d8dcd2;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:-apple-system,'SF Pro Rounded','Segoe UI',Roboto,sans-serif;
+    padding:24px;
+  }
+  header{max-width:1100px;margin:0 auto 18px}
+  h1{font-size:26px;letter-spacing:1px;font-weight:800;margin-bottom:6px}
+  p.sub{opacity:.7;font-size:14px;line-height:1.5;max-width:760px}
+  #diagram-wrap{
+    max-width:100%;
+    overflow:auto;
+    border:1px solid var(--line);
+    border-radius:14px;
+    background:var(--panel);
+    box-shadow:0 1px 3px rgba(0,0,0,.06);
+    padding:12px;
+  }
+  .mermaid{display:flex;justify-content:center}
+  footer{max-width:1100px;margin:16px auto 0;opacity:.55;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>STREET GOAL — Concept Mindmap</h1>
+  <p class="sub">
+    Mermaid mindmap of every design concept explored across the arcade prototypes (v0–v15, including
+    kick-mechanic forks 13A/B/C). Root → branch → leaf mechanic, with version provenance noted per leaf.
+  </p>
+</header>
+
+<div id="diagram-wrap">
+<pre class="mermaid">
+mindmap
+  root((Street Goal))
+    World and Camera
+      2D perspective projection<br/>v0+
+      Field aspect and size<br/>v6, v9, v14
+      Horizon / camera height<br/>v8+
+      Depth lengthening<br/>v8–v9
+      Squarer trapezoid<br/>v7
+    Player Movement
+      Left-thumb joystick<br/>v1–v13, v15
+      Tap-to-position<br/>v14
+      Base run speed<br/>v8, v10
+      Perspective speed scale<br/>v10+
+      Boost
+        Once-per-session boost button<br/>v12 early
+        Pick-up boost<br/>v12–v15
+    Possession and Dribble
+      Ball state machine<br/>v1+
+      Dribble touch / nudge<br/>v2–v9+
+      Kick / grab radius<br/>v4, v14–v15
+    Kick System
+      Right-side swipe lane<br/>v1–v13, v15
+      Swipe-anywhere shoot<br/>v14
+      Lower-right zone panel<br/>v15
+        Chip shot<br/>v15
+        Drive / normal shot<br/>v15
+        Low / ground shot<br/>v15
+      Power = swipe speed v1<br/>v1, v13C
+      Length=xy, speed=z<br/>v6–v10, v12–v13
+      Flick vs long drive<br/>v11
+      Speed + length mixture<br/>v15
+      Near-goal power modulation<br/>v7–v10
+      Aim assist<br/>v11–v15
+      Curve / spin<br/>v1+, v15
+    Levels and Scoring
+      Timed round<br/>v1+
+      Tutorial level L0<br/>v13+
+      Quadrant bonus L1<br/>v2+
+      Goal target zone L2<br/>v2+
+      Score chase L3<br/>v11+
+      Sector respawn grid<br/>v1+
+      Level 1 segment hints<br/>v13+
+    Goalkeeper
+      Keeper bounding box<br/>v6, v15
+      Depth following<br/>v15
+      Ball track and lunge<br/>v2+
+      Steal on contact<br/>v2+
+      Probabilistic saves<br/>v5, v15
+      Farther throw-outs<br/>v13+
+    Presentation
+      NES-style sprites<br/>v2, v8+
+      Stadium and crowd<br/>v9+
+      Low-time red vignette<br/>v9+
+      Particles and messages<br/>v1+
+      Web Audio SFX<br/>v9, v14–v15
+    Session Meta
+      Version picker index<br/>all
+      Session bests<br/>v1, v11+
+      Overlay / level select<br/>v1–v15
+      Kick-mechanic forks<br/>v13A–C
+</pre>
+</div>
+
+<footer>Source: Street Goal arcade HTML prototypes in this repo · concepts through v15 · rendered with Mermaid.js</footer>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'base',
+    themeVariables: {
+      darkMode: false,
+      background: '#ffffff',
+      primaryColor: '#eef3e9',
+      primaryTextColor: '#1b2419',
+      primaryBorderColor: '#2f7a3d',
+      lineColor: '#8a9a86',
+      secondaryColor: '#f7f6f2',
+      tertiaryColor: '#f0f0eb'
+    }
+  });
+
+  // Force readable contrast per node: read each node's actual fill colour and
+  // set its text to dark or light based on luminance, since Mermaid's mindmap
+  // section palette isn't guaranteed to pair every fill with a readable text color.
+  function fixContrast(){
+    const nodes = document.querySelectorAll('.mermaid svg .mindmap-node');
+    nodes.forEach((g) => {
+      const shape = g.querySelector('path, circle, rect, ellipse');
+      if (!shape) return;
+      const fill = getComputedStyle(shape).fill;
+      const m = fill.match(/\d+(\.\d+)?/g);
+      if (!m) return;
+      const [r, g2, b] = m.map(Number);
+      const luminance = (0.299 * r + 0.587 * g2 + 0.114 * b) / 255;
+      const textColor = luminance < 0.55 ? '#f7f6f2' : '#1b2419';
+      g.querySelectorAll('text, foreignObject *').forEach((t) => {
+        t.style.fill = textColor;
+        t.style.color = textColor;
+      });
+    });
+  }
+
+  mermaid.run().then(() => setTimeout(fixContrast, 0));
+
+</script>
+</body>
+</html>
