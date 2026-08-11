@@ -795,12 +795,15 @@ function updateKeeper(dt){
     }
   }
 
-  // Save: block a shot on the line — only 45% of the time within the hitbox.
+  // Save: block a shot on the line.
+  // Ground shots (low ball) save at 60%; lofted balls keep the softer 45% rate.
   if (ball.state === 'flight' && ball.stealGrace <= 0 && ball.z < goal.barH * 0.9){
     const d = Math.hypot(ball.x - keeper.x, ball.y - keeper.y);
     if (d < keeper.r + ball.r + 3 && Math.hypot(ball.vx, ball.vy) > 60){
-      if (Math.random() >= 0.45){
-        // 55% of the time: let the ball pass through the keeper.
+      const isGround = ball.z < goal.barH * 0.35;
+      const saveRate = isGround ? 0.60 : 0.45;
+      if (Math.random() >= saveRate){
+        // Missed the save — let the ball through.
         ball.stealGrace = 0.15;
         return;
       }
