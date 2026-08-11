@@ -429,7 +429,7 @@ function sGoal(){
 
 // ---------- Touch ----------
 const joy = { active:false, id:null, ox:0, oy:0, dx:0, dy:0, max:52 };
-const swipe = { active:false, id:null, pts:[] };
+const swipe = { active:false, id:null, pts:[], zone:'normal' };
 
 function startTouch(x, y, id){
   audio();  // unlock/resume audio on a user gesture
@@ -439,6 +439,9 @@ function startTouch(x, y, id){
   } else if (x >= W/2 && !swipe.active){
     swipe.active = true; swipe.id = id;
     swipe.pts = [{ x, y, t: performance.now() }];
+    // Lock shot type at press — long upward chip flicks shift pts[] and would
+    // otherwise re-resolve the start point outside the chip strip as a drive.
+    swipe.zone = kickZoneAt(x, y);
   }
 }
 function moveTouch(x, y, id){
@@ -455,7 +458,7 @@ function moveTouch(x, y, id){
 }
 function endTouch(id){
   if (joy.active && id === joy.id){ joy.active = false; joy.dx = 0; joy.dy = 0; }
-  if (swipe.active && id === swipe.id){ tryKick(); swipe.active = false; swipe.pts = []; }
+  if (swipe.active && id === swipe.id){ tryKick(); swipe.active = false; swipe.pts = []; swipe.zone = 'normal'; }
 }
 
 cvs.addEventListener('touchstart', e => { e.preventDefault();
@@ -484,7 +487,7 @@ const KICK_ZONE_X = 0.52;
 const KICK_CHIP_RATIO = 0.6;    // chip & low strips are 60% the height of drive
 const ASSIST = 100;
 const GRAV_Z = 420;
-const MAX_SPIN = 1.1;
+const MAX_SPIN = 0.55;        // softer curve than earlier builds
 const BALL_FRICTION = 160;    // constant deceleration (px/s^2) for loose/rolled balls
 
 function swipeAngleOf(pts, i0, i1){
@@ -514,8 +517,11 @@ function kickZoneRects(){
 
 function kickZoneAt(x, y){
   if (x < W * KICK_ZONE_X) return 'normal';
-  for (const z of kickZoneRects()){
-    if (y >= z.y0 && y < z.y1) return z.type;
+  const zones = kickZoneRects();
+  // Snap into the panel: presses slightly above CHIP / below LOW still count.
+  const yClamped = Math.max(zones[0].y0, Math.min(zones[2].y1 - 0.001, y));
+  for (const z of zones){
+    if (yClamped >= z.y0 && yClamped < z.y1) return z.type;
   }
   return 'normal';
 }
@@ -551,7 +557,8 @@ function tryKick(){
   // v15: three shot-type zones on the lower-right of the canvas (see kickZoneRects).
   // Top = chip (high arc), middle = normal drive, bottom = low skimmer.
   // Power is a mixture of swipe speed and swipe distance, like v1.
-  const zone = kickZoneAt(pts[0].x, pts[0].y);
+  // Zone is locked at touchstart so long flicks can't reclassify mid-swipe.
+  const zone = swipe.zone || kickZoneAt(pts[0].x, pts[0].y);
   const fingerSpeed = Math.min(dist / dt, 3200);
   const power = Math.min(80 + fingerSpeed * 0.11 + dist * 0.55, MAX_KICK);
 
@@ -575,7 +582,7 @@ function tryKick(){
     const aStart = swipeAngleOf(pts, 0, Math.floor(n / 3));
     const aEnd   = swipeAngleOf(pts, Math.floor(2 * n / 3), n - 1);
     const turn = signedAngleDiff(aStart, aEnd);
-    spin = Math.max(-MAX_SPIN, Math.min(MAX_SPIN, turn * 2.0));
+    spin = Math.max(-MAX_SPIN, Math.min(MAX_SPIN, turn * 0.85));
   }
 
   const n = pts.length;
