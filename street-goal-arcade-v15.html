@@ -62,7 +62,7 @@
 <div id="overlay">
   <h1>STREET GOAL</h1>
   <div class="big" id="ov-score" style="display:none">0</div>
-  <p id="ov-sub">Left thumb moves. Flick in the lower-right zones to shoot: top = chip, middle = drive, bottom = low. Longer &amp; faster swipes hit harder. Curved swipes bend the ball.</p>
+  <p id="ov-sub">Left thumb moves. Flick in the lower-right zones to shoot: top = chip, middle = drive, bottom = low. Swipe speed sets power (v1-style) with light aim assist. Curved swipes bend the ball.</p>
   <div id="levels">
     <button class="lv" id="tut">TUTORIAL<small>Learn the basics</small></button>
     <button class="lv" id="lv1">LEVEL 1<small>Quadrant Bonus ×2</small></button>
@@ -118,12 +118,11 @@ function resize(){
   F = sNear * D0;
   hCam = (H * 0.58 - horizonY) / sNear;
   goal.x = (world.w - goal.w) / 2;
-  // Goalkeeper area: v15 box enlarged again (~20% over previous) so the keeper can
-  // step further into the court.
+  // Goalkeeper area: deepened further so the keeper can come well into the court.
   keeperArea.x = Math.max(0, goal.x - 29);
   keeperArea.y = 0;
   keeperArea.w = Math.min(world.w - keeperArea.x, goal.w + 58);
-  keeperArea.h = 115;
+  keeperArea.h = 150;
 }
 window.addEventListener('resize', resize);
 
@@ -487,7 +486,8 @@ const KICK_ZONE_X = 0.52;
 const KICK_CHIP_RATIO = 0.6;    // chip & low strips are 60% the height of drive
 const ASSIST = 100;
 const GRAV_Z = 420;
-const MAX_SPIN = 0.55;        // softer curve than earlier builds
+const MAX_SPIN = 1.1;
+const AIM_BLEND = 0.15;       // light aim assist toward goal center
 const BALL_FRICTION = 160;    // constant deceleration (px/s^2) for loose/rolled balls
 
 function swipeAngleOf(pts, i0, i1){
@@ -554,13 +554,11 @@ function tryKick(){
   // Remember which quadrant the shot was taken from (for the Level 1 bonus).
   kickStartSector = sectorAt(player.x, player.y);
 
-  // v15: three shot-type zones on the lower-right of the canvas (see kickZoneRects).
-  // Top = chip (high arc), middle = normal drive, bottom = low skimmer.
-  // Power is a mixture of swipe speed and swipe distance, like v1.
-  // Zone is locked at touchstart so long flicks can't reclassify mid-swipe.
+  // Power & direction from v13C / v1: swipe speed = power, light aim assist.
+  // Zones only reshape the trajectory (chip / drive / low).
   const zone = swipe.zone || kickZoneAt(pts[0].x, pts[0].y);
   const fingerSpeed = Math.min(dist / dt, 3200);
-  const power = Math.min(80 + fingerSpeed * 0.11 + dist * 0.55, MAX_KICK);
+  const power = Math.min(110 + fingerSpeed * 0.17, MAX_KICK);
 
   let xyPower, zPower;
   if (zone === 'chip'){
@@ -571,7 +569,7 @@ function tryKick(){
     zPower  = 35 + power * 0.06;
   } else {
     xyPower = power;
-    zPower  = 90 + power * 0.26;
+    zPower  = 90 + power * 0.26;   // same arc as v13C drive
   }
   xyPower = Math.min(xyPower, MAX_KICK);
   zPower  = Math.min(zPower, 420);
@@ -582,12 +580,21 @@ function tryKick(){
     const aStart = swipeAngleOf(pts, 0, Math.floor(n / 3));
     const aEnd   = swipeAngleOf(pts, Math.floor(2 * n / 3), n - 1);
     const turn = signedAngleDiff(aStart, aEnd);
-    spin = Math.max(-MAX_SPIN, Math.min(MAX_SPIN, turn * 0.85));
+    spin = Math.max(-MAX_SPIN, Math.min(MAX_SPIN, turn * 2.0));
   }
 
   const n = pts.length;
   const a0 = swipeAngleOf(pts, 0, Math.max(1, Math.floor(n / 3)));
-  const dir = { x: Math.cos(a0), y: Math.sin(a0) };
+  const gx = goal.x + goal.w / 2, gy = 8;
+  const toGoal = { x: gx - player.x, y: gy - player.y };
+  const toGoalLen = Math.hypot(toGoal.x, toGoal.y) || 1;
+  toGoal.x /= toGoalLen; toGoal.y /= toGoalLen;
+  const dir = {
+    x: Math.cos(a0) * (1 - AIM_BLEND) + toGoal.x * AIM_BLEND,
+    y: Math.sin(a0) * (1 - AIM_BLEND) + toGoal.y * AIM_BLEND,
+  };
+  const dirLen = Math.hypot(dir.x, dir.y) || 1;
+  dir.x /= dirLen; dir.y /= dirLen;
 
   ball.state = 'flight';
   ball.vx = dir.x * xyPower;
@@ -1345,7 +1352,7 @@ function draw(){
     ctx.fillStyle = 'rgba(240,246,235,.30)'; ctx.fill();
   }
 
-  // v15: permanent shot-type zones, lower-right of the screen — chip / drive / low.
+  // Permanent shot-type zones, lower-right — chip / drive / low.
   {
     ctx.font = '800 10px -apple-system,sans-serif';
     ctx.textAlign = 'right';
