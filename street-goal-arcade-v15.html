@@ -62,7 +62,7 @@
 <div id="overlay">
   <h1>STREET GOAL</h1>
   <div class="big" id="ov-score" style="display:none">0</div>
-  <p id="ov-sub">Left thumb moves. Flick in the lower-right zones to shoot: top = chip, middle = drive, bottom = low. Swipe speed sets power (v1-style) with light aim assist. Curved swipes bend the ball.</p>
+  <p id="ov-sub">Left thumb moves. Flick in the lower-right zones to shoot: top = chip, middle = drive, bottom = low. Power blends swipe speed and length, with light aim assist. Curved swipes bend the ball.</p>
   <div id="levels">
     <button class="lv" id="tut">TUTORIAL<small>Learn the basics</small></button>
     <button class="lv" id="lv1">LEVEL 1<small>Quadrant Bonus ×2</small></button>
@@ -554,11 +554,11 @@ function tryKick(){
   // Remember which quadrant the shot was taken from (for the Level 1 bonus).
   kickStartSector = sectorAt(player.x, player.y);
 
-  // Power & direction from v13C / v1: swipe speed = power, light aim assist.
+  // Power is a blend of swipe speed and stroke length; direction keeps light aim assist.
   // Zones only reshape the trajectory (chip / drive / low).
   const zone = swipe.zone || kickZoneAt(pts[0].x, pts[0].y);
   const fingerSpeed = Math.min(dist / dt, 3200);
-  const power = Math.min(110 + fingerSpeed * 0.17, MAX_KICK);
+  const power = Math.min(90 + fingerSpeed * 0.10 + dist * 0.70, MAX_KICK);
 
   let xyPower, zPower;
   if (zone === 'chip'){
