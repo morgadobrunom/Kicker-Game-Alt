@@ -183,6 +183,7 @@ const keeper = { x: world.w/2, y: 30, r: 15, homeX: world.w/2, phase: 0,
                  // v16: straight-line random patrol instead of ball tracking.
                  px1: 0, px2: 0, py: 20, pT: 0, pDur: 2.2, heldBall: null };
 const KEEPER_SPEED = 62;        // slightly faster than before, but doesn't track the ball
+const KEEPER_PATROL_SPAN = 0.34; // fraction of goal width — tighter, center-biased patrol
 const keeperArea = { x: 0, y: 0, w: 0, h: 80 };  // updated in resize
 
 let particles = [];
@@ -308,9 +309,9 @@ function startRound(){
   keeper.x = keeper.homeX; keeper.y = 22; keeper.animT = 0;
   keeper.visualScale = toScreen(keeper.x, keeper.y).s;
   keeper.holdT = 0; keeper.heldBall = null;
-  keeper.pT = 0; keeper.pDur = 1 + Math.random() * 1.5;
+  keeper.pT = 0; keeper.pDur = 1.3 + Math.random() * 0.7;
   keeper.px1 = keeper.x; keeper.py = keeper.y;
-  keeper.px2 = keeperArea.x + Math.random() * keeperArea.w;
+  keeper.px2 = keeperPatrolTarget();
   for (const b of balls){ respawnBall(b); }
   newZone();
   boost.available = true; boost.active = false; boost.timer = 0;
@@ -861,6 +862,13 @@ function drawPowerUp(){
 // ---------- Keeper (Level 2) ----------
 // v16: the keeper no longer tracks the balls. It patrols straight-line segments
 // at random just in front of the goal line, a bit faster than before.
+function keeperPatrolTarget(){
+  const cx = goal.x + goal.w / 2;
+  const span = goal.w * KEEPER_PATROL_SPAN;
+  const x = cx + (Math.random() - 0.5) * span;
+  return Math.max(keeperArea.x + 8, Math.min(keeperArea.x + keeperArea.w - 8, x));
+}
+
 function updateKeeper(dt){
   keeper.animT += dt;
   const keeperRawS = toScreen(keeper.x, keeper.y).s;
@@ -889,9 +897,9 @@ function updateKeeper(dt){
   keeper.pT += dt;
   if (keeper.pT >= keeper.pDur){
     keeper.pT = 0;
-    keeper.pDur = 1 + Math.random() * 1.6;
+    keeper.pDur = 1.3 + Math.random() * 0.7;
     keeper.px1 = keeper.x; keeper.py = keeper.y;
-    keeper.px2 = keeperArea.x + 6 + Math.random() * (keeperArea.w - 12);
+    keeper.px2 = keeperPatrolTarget();
   }
   const t = Math.min(1, keeper.pT / keeper.pDur);
   const tx = keeper.px1 + (keeper.px2 - keeper.px1) * t;
@@ -1473,11 +1481,11 @@ function draw(){
     if (stealAvailable()){
       const sz = stealZoneRect();
       const zw = sz.x1 - sz.x0, zh = sz.y1 - sz.y0;
-      ctx.fillStyle = 'rgba(240,246,235,0.04)';
+      ctx.fillStyle = 'rgba(229,72,77,0.18)';
       ctx.fillRect(sz.x0, sz.y0, zw, zh);
-      ctx.strokeStyle = 'rgba(240,246,235,0.12)';
+      ctx.strokeStyle = 'rgba(229,72,77,0.45)';
       ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(sz.x0, sz.y1); ctx.lineTo(sz.x1, sz.y1); ctx.stroke();
+      ctx.strokeRect(sz.x0 + 1, sz.y0 + 1, zw - 2, zh - 2);
       ctx.fillStyle = 'rgba(240,246,235,0.85)';
       ctx.fillText('STEAL', sz.x1 - 8, (sz.y0 + sz.y1) / 2 + 3);
     }
