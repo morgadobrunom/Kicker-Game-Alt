@@ -15,7 +15,7 @@
     --accent:#ffe08a;
     --danger:#ff6b6b;
     --night:#0b1410;
-    --keeper:#e5484d;
+    --keeper:#ffd54f;
   }
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{height:100%;overflow:hidden;background:var(--night);
@@ -1240,7 +1240,7 @@ function makeFrame(legs, face){
 
 const sprCache = new Map();
 function spriteFor(legs, face, palette){
-  const key = legs + ':' + face + ':' + (palette ? 'opp' : 'pl');
+  const key = legs + ':' + face + ':' + (palette ? (palette.B || 'alt') : 'pl');
   if (sprCache.has(key)) return sprCache.get(key);
   const grid = makeFrame(legs, face);
   const off = document.createElement('canvas');
@@ -1483,19 +1483,20 @@ function draw(){
     const diveLean = diving ? Math.max(-0.55, Math.min(0.55, (keeper.diveTx - keeper.x) / 70)) : 0;
     const diveDrop = diving ? (1 - keeper.diveT / keeper.diveDur) * 8 : 0;
     const face = diving ? (diveLean < 0 ? Math.PI / 2 + 0.55 : Math.PI / 2 - 0.55) : Math.PI / 2;
-    const d = drawSprite(keeper.x, keeper.y + diveDrop * 0.15, keeper.animT, true, face, keeper.visualScale);
+    const pal = { ...SPR_PAL, B: '#ffd54f', b: '#c99700' };
+    const d = drawSprite(keeper.x, keeper.y + diveDrop * 0.15, keeper.animT, true, face, keeper.visualScale, pal);
     // Gloves / keeper cue
     ctx.beginPath();
     const gloveX = d.p.x + diveLean * d.dw * 0.35;
     const gloveY = d.dy + d.dh * 0.42 + diveDrop * 0.4;
     ctx.arc(gloveX, gloveY, 5 * d.u * 0.5 + 4, 0, Math.PI * 2);
-    ctx.strokeStyle = flash ? 'rgba(255,224,138,.95)' : (diving ? 'rgba(255,224,138,.85)' : 'rgba(229,72,77,.8)');
+    ctx.strokeStyle = flash ? 'rgba(255,255,255,.95)' : (diving ? 'rgba(255,240,180,.9)' : 'rgba(201,151,0,.85)');
     ctx.lineWidth = 2;
     ctx.stroke();
     if (diving){
       ctx.beginPath();
       ctx.ellipse(d.p.x, d.dy + d.dh * 0.72 + diveDrop * 0.25, d.dw * 0.42, d.dh * 0.12, diveLean * 0.8, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(229,72,77,.18)';
+      ctx.fillStyle = 'rgba(255,224,138,.22)';
       ctx.fill();
     }
     if (flash){
