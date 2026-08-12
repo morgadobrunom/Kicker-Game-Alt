@@ -42,7 +42,7 @@
     box-shadow:0 0 6px rgba(240,246,235,.15)}
   #timer.low{color:var(--danger);animation:pulse .5s infinite alternate}
   @keyframes pulse{from{transform:scale(1)}to{transform:scale(1.12)}}
-  #msg{position:fixed;top:30%;left:0;right:0;text-align:center;pointer-events:none;
+  #msg{position:fixed;top:calc(env(safe-area-inset-top, 0px) + 16vh);left:0;right:0;text-align:center;pointer-events:none;
     color:var(--accent);font-weight:800;font-size:40px;letter-spacing:4px;
     text-shadow:0 3px 14px rgba(0,0,0,.7);opacity:0;transform:scale(.8);
     transition:opacity .18s ease,transform .18s ease}
