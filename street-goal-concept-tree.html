@@ -39,7 +39,7 @@
 <header>
   <h1>STREET GOAL — Concept Mindmap</h1>
   <p class="sub">
-    Mermaid mindmap of every design concept explored across the arcade prototypes (v0–v15, including
+    Mermaid mindmap of every design concept explored across the arcade prototypes (v0–v16, including
     kick-mechanic forks 13A/B/C). Root → branch → leaf mechanic, with version provenance noted per leaf.
   </p>
 </header>
@@ -55,61 +55,78 @@ mindmap
       Depth lengthening<br/>v8–v9
       Squarer trapezoid<br/>v7
     Player Movement
-      Left-thumb joystick<br/>v1–v13, v15
+      Left-thumb joystick<br/>v1–v13, v15–v16
       Tap-to-position<br/>v14
       Base run speed<br/>v8, v10
       Perspective speed scale<br/>v10+
       Boost
         Once-per-session boost button<br/>v12 early
-        Pick-up boost<br/>v12–v15
+        Pick-up boost<br/>v12–v16
     Possession and Dribble
       Ball state machine<br/>v1+
       Dribble touch / nudge<br/>v2–v9+
-      Kick / grab radius<br/>v4, v14–v15
+      Kick / grab radius<br/>v4, v14–v16
     Kick System
-      Right-side swipe lane<br/>v1–v13, v15
+      Right-side swipe lane<br/>v1–v13, v15–v16
       Swipe-anywhere shoot<br/>v14
-      Lower-right zone panel<br/>v15
-        Chip shot<br/>v15
-        Drive / normal shot<br/>v15
-        Low / ground shot<br/>v15
+      Lower-right zone panel<br/>v15–v16
+        Chip shot<br/>v15–v16
+        Drive / normal shot<br/>v15–v16
+        Low / ground shot<br/>v15–v16
       Power = swipe speed v1<br/>v1, v13C
       Length=xy, speed=z<br/>v6–v10, v12–v13
       Flick vs long drive<br/>v11
-      Speed + length mixture<br/>v15
+      Speed + length mixture<br/>v15–v16
       Near-goal power modulation<br/>v7–v10
-      Aim assist<br/>v11–v15
-      Curve / spin<br/>v1+, v15
+      Aim assist<br/>v11–v16
+      Curve / spin<br/>v1+, v15–v16
     Levels and Scoring
-      Timed round<br/>v1+
-      Tutorial level L0<br/>v13+
-      Quadrant bonus L1<br/>v2+
-      Goal target zone L2<br/>v2+
-      Score chase L3<br/>v11+
+      Timed round<br/>v1–v15
+      Tutorial level L0<br/>v13–v15
+      Quadrant bonus L1<br/>v2–v15
+      Goal target zone L2<br/>v2–v16
+      Score chase L3<br/>v11–v15
       Sector respawn grid<br/>v1+
-      Level 1 segment hints<br/>v13+
+      Level 1 segment hints<br/>v13–v15
+      Tug of War mode<br/>v16
+        Margin score +3 lead<br/>v16
+        Opponent loses on goal<br/>v16
+        Single PLAY overlay<br/>v16
+    Opposition
+      Opponent bot<br/>v16
+        Chase nearest loose ball<br/>v16
+        10% steal switch<br/>v16
+        1 second kick cap<br/>v16
+        Goal-directed shots<br/>v16
+        Slower movement<br/>v16
+      Two interactive balls<br/>v16
+      Player steal button<br/>v16
+        Larger steal radius<br/>v16
     Goalkeeper
       Keeper bounding box<br/>v6, v15
       Depth following<br/>v15
-      Ball track and lunge<br/>v2+
-      Steal on contact<br/>v2+
-      Probabilistic saves<br/>v5, v15
-      Farther throw-outs<br/>v13+
+      Ball track and lunge<br/>v2–v15
+      Random straight patrol<br/>v16
+      Less ball-responsive<br/>v16
+      Steal on contact<br/>v2–v15
+      Probabilistic saves<br/>v5, v15–v16
+      Farther throw-outs<br/>v13+, v16
     Presentation
       NES-style sprites<br/>v2, v8+
+      Opponent red kit<br/>v16
       Stadium and crowd<br/>v9+
-      Low-time red vignette<br/>v9+
+      Low-time red vignette<br/>v9–v15
       Particles and messages<br/>v1+
-      Web Audio SFX<br/>v9, v14–v15
+      Web Audio SFX<br/>v9, v14–v16
     Session Meta
       Version picker index<br/>all
-      Session bests<br/>v1, v11+
+      Session bests<br/>v1, v11–v15
       Overlay / level select<br/>v1–v15
       Kick-mechanic forks<br/>v13A–C
 </pre>
 </div>
 
-<footer>Source: Street Goal arcade HTML prototypes in this repo · concepts through v15 · rendered with Mermaid.js</footer>
+<footer>Source: Street Goal arcade HTML prototypes in this repo · concepts through v16 · rendered with Mermaid.js</footer>
 
 <script type="module">
   import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
