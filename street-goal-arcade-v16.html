@@ -783,15 +783,15 @@ function botKick(ball){
   ball.stealGrace = 0.25;
   opp.kickCd = 0.8;
   opp.holdT = 0;
-  const gx = goal.x + goal.w / 2 + (Math.random() - 0.5) * goal.w * 0.2;
-  const gy = 6 + Math.random() * 18;   // aim at the goal mouth
+  const gx = goal.x + goal.w / 2 + (Math.random() - 0.5) * goal.w * 0.12;
+  const gy = 8 + Math.random() * 12;   // aim at the goal mouth
   const dx = gx - ball.x, dy = gy - ball.y;
   const d = Math.hypot(dx, dy) || 1;
-  const xy = 290 + Math.random() * 130;
+  const xy = 370 + Math.random() * 90;
   ball.vx = (dx / d) * xy;
   ball.vy = (dy / d) * xy;
-  ball.vz = 55 + Math.random() * 75;
-  ball.spin = (Math.random() - 0.5) * 0.3;
+  ball.vz = 78 + Math.random() * 52;
+  ball.spin = (Math.random() - 0.5) * 0.2;
   sKick();
   const p = toScreen(ball.x, ball.y, ball.z);
   spawnParticles(p.x, p.y, 6, 'rgba(255,107,107,.9)');
