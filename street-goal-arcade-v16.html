@@ -62,15 +62,9 @@
   .lv small{display:block;font-weight:600;letter-spacing:.3px;opacity:.65;margin-top:4px;font-size:11px}
   .lv:active{transform:scale(.96)}
   #overlay .hint{margin-top:10px;font-size:12px;letter-spacing:1px;opacity:.55}
-  #steal{position:fixed;right:14px;bottom:calc(34% + 16px);z-index:20;pointer-events:auto; display:none;
-    border:2px solid rgba(229,72,77,.65);background:rgba(229,72,77,.28);color:var(--chalk);
-    border-radius:12px;padding:12px 16px;min-width:118px;text-align:center;line-height:1.2;
-    touch-action:manipulation;cursor:pointer;box-shadow:0 4px 16px rgba(229,72,77,.25)}
-  #steal .steal-main{display:block;font-size:13px;font-weight:800;letter-spacing:1.2px}
-  #steal .steal-sub{display:block;margin-top:4px;font-size:10px;font-weight:600;letter-spacing:.4px;opacity:.8}
-  #steal.far{border-color:rgba(229,72,77,.28);background:rgba(229,72,77,.10);box-shadow:none;opacity:.72}
-  #steal.far .steal-sub{opacity:.65}
-  #steal:active{transform:scale(.95)}
+  #steal{position:fixed;z-index:20;pointer-events:auto;display:none;
+    background:transparent;border:none;color:transparent;
+    touch-action:manipulation;cursor:pointer;padding:0}
 </style>
 </head>
 <body>
@@ -95,13 +89,13 @@
 <div id="overlay">
   <h1>TUG OF WAR</h1>
   <div class="big" id="ov-score" style="display:none">0</div>
-  <p id="ov-sub">Two balls, two opponents. Score into the highlighted goal zone for ×2. When you score, the opponent loses a point. Reach a +3 lead to win. Tap the red STEAL button to rob the bot.</p>
+  <p id="ov-sub">Two balls, two opponents. Score into the highlighted goal zone for ×2. When you score, the opponent loses a point. Reach a +3 lead to win. Tap STEAL when close to rob the bot.</p>
   <div id="levels">
     <button class="lv" id="play">PLAY<small>First to +3 lead</small></button>
   </div>
   <div class="hint" id="ov-hint">TAP PLAY TO START</div>
 </div>
-<button id="steal"><span class="steal-main">STEAL BALL</span><span class="steal-sub">Take from bot</span></button>
+<button id="steal" aria-label="Steal"></button>
 <script>
 (() => {
 const cvs = document.getElementById('game');
@@ -551,8 +545,13 @@ function inStealZone(x, y){
 function positionStealButton(){
   const z = stealZoneRect();
   const btn = document.getElementById('steal');
-  btn.style.right = (W - z.x1 + 14) + 'px';
-  btn.style.bottom = (H - z.y1 + 8) + 'px';
+  btn.style.left = z.x0 + 'px';
+  btn.style.right = 'auto';
+  btn.style.width = (z.x1 - z.x0) + 'px';
+  btn.style.height = (z.y1 - z.y0) + 'px';
+  btn.style.bottom = (H - z.y1) + 'px';
+  btn.style.top = 'auto';
+  btn.style.display = stealAvailable() ? 'flex' : 'none';
 }
 
 function tryKick(){
@@ -1474,20 +1473,13 @@ function draw(){
     if (stealAvailable()){
       const sz = stealZoneRect();
       const zw = sz.x1 - sz.x0, zh = sz.y1 - sz.y0;
-      const midY = (sz.y0 + sz.y1) / 2;
-      const ready = stealInRange();
-      ctx.fillStyle = ready ? 'rgba(229,72,77,0.18)' : 'rgba(229,72,77,0.08)';
+      ctx.fillStyle = 'rgba(240,246,235,0.04)';
       ctx.fillRect(sz.x0, sz.y0, zw, zh);
-      ctx.strokeStyle = ready ? 'rgba(229,72,77,0.55)' : 'rgba(229,72,77,0.22)';
-      ctx.lineWidth = ready ? 2 : 1;
-      ctx.strokeRect(sz.x0 + 1, sz.y0 + 1, zw - 2, zh - 2);
-      ctx.textAlign = 'right';
-      ctx.font = '800 13px -apple-system,sans-serif';
-      ctx.fillStyle = ready ? 'rgba(255,210,210,0.95)' : 'rgba(255,210,210,0.45)';
-      ctx.fillText(ready ? 'STEAL BALL' : 'GET CLOSER', sz.x1 - 10, midY - 3);
-      ctx.font = '700 9px -apple-system,sans-serif';
-      ctx.fillStyle = ready ? 'rgba(255,180,180,0.85)' : 'rgba(255,180,180,0.45)';
-      ctx.fillText(ready ? 'TAP TO ROB BOT' : 'MOVE NEAR BOT', sz.x1 - 10, midY + 10);
+      ctx.strokeStyle = 'rgba(240,246,235,0.12)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(sz.x0, sz.y1); ctx.lineTo(sz.x1, sz.y1); ctx.stroke();
+      ctx.fillStyle = 'rgba(240,246,235,0.85)';
+      ctx.fillText('STEAL', sz.x1 - 8, (sz.y0 + sz.y1) / 2 + 3);
     }
     for (const z of kickZoneRects()){
       ctx.fillStyle = 'rgba(' + z.col + ',0.05)';
@@ -1509,16 +1501,9 @@ function draw(){
     ctx.stroke();
   }
 
-  // Steal button visibility (HTML fallback aligned to canvas steal zone).
-  const stealBtn = document.getElementById('steal');
-  stealBtn.style.display = stealAvailable() ? 'block' : 'none';
-  if (stealAvailable()){
-    positionStealButton();
-    const ready = stealInRange();
-    stealBtn.classList.toggle('far', !ready);
-    stealBtn.querySelector('.steal-main').textContent = ready ? 'STEAL BALL' : 'GET CLOSER';
-    stealBtn.querySelector('.steal-sub').textContent = ready ? 'Take from bot' : 'Move near bot';
-  }
+  // Steal touch target aligned to canvas steal zone.
+  if (stealAvailable()) positionStealButton();
+  else document.getElementById('steal').style.display = 'none';
 }
 
 // ---------- Loop ----------
