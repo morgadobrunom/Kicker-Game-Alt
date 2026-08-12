@@ -28,6 +28,18 @@
   .hud-item{color:var(--chalk);text-shadow:0 2px 8px rgba(0,0,0,.6);text-align:center;min-width:64px}
   .hud-label{font-size:10px;letter-spacing:2px;opacity:.6;font-weight:700}
   .hud-value{font-size:28px;font-weight:800;letter-spacing:1px;font-variant-numeric:tabular-nums}
+  .hud-tug{flex:1;max-width:240px;min-width:150px}
+  .tug-bar{display:flex;align-items:center;justify-content:center;gap:7px;margin-top:6px}
+  .tug-side{display:flex;gap:5px}
+  .tug-slot{width:20px;height:20px;border-radius:5px;
+    border:2px solid rgba(240,246,235,.22);background:rgba(240,246,235,.05);
+    box-shadow:inset 0 1px 3px rgba(0,0,0,.25);transition:background .2s ease,border-color .2s ease,box-shadow .2s ease}
+  .tug-you .tug-slot.filled{background:var(--kit);border-color:rgba(79,195,247,.85);
+    box-shadow:0 0 10px rgba(79,195,247,.5),inset 0 1px 0 rgba(255,255,255,.25)}
+  .tug-opp .tug-slot.filled{background:var(--opp);border-color:rgba(255,107,107,.85);
+    box-shadow:0 0 10px rgba(255,107,107,.5),inset 0 1px 0 rgba(255,255,255,.2)}
+  .tug-rope{width:4px;height:16px;border-radius:2px;background:rgba(240,246,235,.35);
+    box-shadow:0 0 6px rgba(240,246,235,.15)}
   #timer.low{color:var(--danger);animation:pulse .5s infinite alternate}
   @keyframes pulse{from{transform:scale(1)}to{transform:scale(1.12)}}
   #msg{position:fixed;top:30%;left:0;right:0;text-align:center;pointer-events:none;
@@ -50,9 +62,14 @@
   .lv small{display:block;font-weight:600;letter-spacing:.3px;opacity:.65;margin-top:4px;font-size:11px}
   .lv:active{transform:scale(.96)}
   #overlay .hint{margin-top:10px;font-size:12px;letter-spacing:1px;opacity:.55}
-  #steal{position:fixed;right:14px;bottom:calc(34% + 16px);z-index:4;pointer-events:auto; display:none;
-    border:2px solid rgba(229,72,77,.55);background:rgba(229,72,77,.20);color:var(--chalk);
-    border-radius:12px;padding:10px 14px;font-size:12px;font-weight:800;letter-spacing:1px}
+  #steal{position:fixed;right:14px;bottom:calc(34% + 16px);z-index:20;pointer-events:auto; display:none;
+    border:2px solid rgba(229,72,77,.65);background:rgba(229,72,77,.28);color:var(--chalk);
+    border-radius:12px;padding:12px 16px;min-width:118px;text-align:center;line-height:1.2;
+    touch-action:manipulation;cursor:pointer;box-shadow:0 4px 16px rgba(229,72,77,.25)}
+  #steal .steal-main{display:block;font-size:13px;font-weight:800;letter-spacing:1.2px}
+  #steal .steal-sub{display:block;margin-top:4px;font-size:10px;font-weight:600;letter-spacing:.4px;opacity:.8}
+  #steal.far{border-color:rgba(229,72,77,.28);background:rgba(229,72,77,.10);box-shadow:none;opacity:.72}
+  #steal.far .steal-sub{opacity:.65}
   #steal:active{transform:scale(.95)}
 </style>
 </head>
@@ -60,8 +77,19 @@
 <canvas id="game"></canvas>
 <div id="hud">
   <div class="hud-item"><div class="hud-label">BEST</div><div class="hud-value" id="best">0</div></div>
-  <div class="hud-item"><div class="hud-label">TUG</div><div class="hud-value" id="score">0</div></div>
-  <div class="hud-item"><div class="hud-label">WIN</div><div class="hud-value" id="timer">+3</div></div>
+  <div class="hud-item hud-tug">
+    <div class="hud-label">TUG</div>
+    <div class="tug-bar" id="tug-bar">
+      <div class="tug-side tug-you" id="tug-you">
+        <span class="tug-slot"></span><span class="tug-slot"></span><span class="tug-slot"></span>
+      </div>
+      <div class="tug-rope" aria-hidden="true"></div>
+      <div class="tug-side tug-opp" id="tug-opp">
+        <span class="tug-slot"></span><span class="tug-slot"></span><span class="tug-slot"></span>
+      </div>
+    </div>
+  </div>
+  <div class="hud-item" style="min-width:64px;visibility:hidden" aria-hidden="true"></div>
 </div>
 <div id="msg">GOAL!</div>
 <div id="overlay">
@@ -73,14 +101,14 @@
   </div>
   <div class="hint" id="ov-hint">TAP PLAY TO START</div>
 </div>
-<button id="steal">STEAL</button>
+<button id="steal"><span class="steal-main">STEAL BALL</span><span class="steal-sub">Take from bot</span></button>
 <script>
 (() => {
 const cvs = document.getElementById('game');
 const ctx = cvs.getContext('2d');
-const scoreEl = document.getElementById('score');
 const bestEl = document.getElementById('best');
-const timerEl = document.getElementById('timer');
+const youTugSlots = document.querySelectorAll('#tug-you .tug-slot');
+const oppTugSlots = document.querySelectorAll('#tug-opp .tug-slot');
 const msgEl = document.getElementById('msg');
 const overlay = document.getElementById('overlay');
 const ovTitle = overlay.querySelector('h1');
@@ -120,6 +148,7 @@ function resize(){
   keeperArea.y = 0;
   keeperArea.w = Math.min(world.w - keeperArea.x, goal.w + 58);
   keeperArea.h = 150;
+  positionStealButton();
 }
 window.addEventListener('resize', resize);
 
@@ -275,8 +304,6 @@ function newZone(){
 function startRound(){
   level = 2;
   score = 0;
-  scoreEl.textContent = '0';
-  timerEl.classList.remove('low');
   player.x = world.w/2; player.y = world.h*0.78; player.face = -Math.PI/2;
   player.moving = false; player.animT = 0;
   player.visualScale = toScreen(player.x, player.y).s;
@@ -301,7 +328,14 @@ function startRound(){
 }
 
 function updateHudScore(){
-  scoreEl.textContent = (score > 0 ? '+' : '') + score;
+  const playerPts = Math.min(WIN_LEAD, Math.max(0, score));
+  const oppPts = Math.min(WIN_LEAD, Math.max(0, -score));
+  youTugSlots.forEach((slot, i) => {
+    slot.classList.toggle('filled', playerPts > 0 && i >= WIN_LEAD - playerPts);
+  });
+  oppTugSlots.forEach((slot, i) => {
+    slot.classList.toggle('filled', oppPts > 0 && i < oppPts);
+  });
 }
 
 function endRound(){
@@ -334,8 +368,16 @@ function activateBoost(){
   if (navigator.vibrate) navigator.vibrate(25);
 }
 bestEl.textContent = '0';
-// Steal button listener
-document.getElementById('steal').addEventListener('click', e => { e.stopPropagation(); tryPlayerSteal(); });
+// Steal button listener (HTML fallback; canvas steal zone is primary on touch devices).
+const stealBtn = document.getElementById('steal');
+function onStealBtn(e){
+  e.preventDefault();
+  e.stopPropagation();
+  audio();
+  tryPlayerSteal();
+}
+stealBtn.addEventListener('click', onStealBtn);
+stealBtn.addEventListener('touchend', onStealBtn, { passive: false });
 // Show single-mode PLAY button on first load.
 levelsEl.style.display = 'flex';
 
@@ -374,7 +416,7 @@ function sGoal(){
 
 // ---------- Touch ----------
 const joy = { active:false, id:null, ox:0, oy:0, dx:0, dy:0, max:52 };
-const swipe = { active:false, id:null, pts:[], zone:'normal' };
+const swipe = { active:false, id:null, pts:[], zone:'normal', steal:false };
 
 function startTouch(x, y, id){
   audio();  // unlock/resume audio on a user gesture
@@ -384,9 +426,8 @@ function startTouch(x, y, id){
   } else if (x >= W/2 && !swipe.active){
     swipe.active = true; swipe.id = id;
     swipe.pts = [{ x, y, t: performance.now() }];
-    // Lock shot type at press — long upward chip flicks shift pts[] and would
-    // otherwise re-resolve the start point outside the chip strip as a drive.
-    swipe.zone = kickZoneAt(x, y);
+    swipe.steal = stealReady() && inStealZone(x, y);
+    swipe.zone = swipe.steal ? 'normal' : kickZoneAt(x, y);
   }
 }
 function moveTouch(x, y, id){
@@ -403,7 +444,11 @@ function moveTouch(x, y, id){
 }
 function endTouch(id){
   if (joy.active && id === joy.id){ joy.active = false; joy.dx = 0; joy.dy = 0; }
-  if (swipe.active && id === swipe.id){ tryKick(); swipe.active = false; swipe.pts = []; swipe.zone = 'normal'; }
+  if (swipe.active && id === swipe.id){
+    if (swipe.steal) tryPlayerSteal();
+    else tryKick();
+    swipe.active = false; swipe.pts = []; swipe.zone = 'normal'; swipe.steal = false;
+  }
 }
 
 cvs.addEventListener('touchstart', e => { e.preventDefault();
@@ -429,6 +474,7 @@ const MAX_KICK = 640;
 const KICK_ZONE_TOP = 0.62;     // lower-right kick panel
 const KICK_ZONE_BOTTOM = 0.94;
 const KICK_ZONE_X = 0.52;
+const STEAL_REACH = 48;       // extra reach beyond player + opp radii for a tackle steal
 const KICK_CHIP_RATIO = 0.6;    // chip & low strips are 60% the height of drive
 const ASSIST = 100;
 const GRAV_Z = 420;
@@ -470,6 +516,43 @@ function kickZoneAt(x, y){
     if (yClamped >= z.y0 && yClamped < z.y1) return z.type;
   }
   return 'normal';
+}
+
+function stealAvailable(){
+  return gameState === 'playing' && balls.some(b => b.holder === 'opp');
+}
+
+function stealRadius(){
+  return player.r + opp.r + STEAL_REACH;
+}
+
+function stealInRange(){
+  if (!stealAvailable()) return false;
+  return Math.hypot(opp.x - player.x, opp.y - player.y) <= stealRadius();
+}
+
+function stealReady(){
+  return stealInRange();
+}
+
+function stealZoneRect(){
+  const zTop = H * KICK_ZONE_TOP;
+  const x0 = W * KICK_ZONE_X;
+  const y1 = zTop - 4;
+  const y0 = Math.max(H * 0.48, y1 - H * 0.09);
+  return { x0, x1: W, y0, y1 };
+}
+
+function inStealZone(x, y){
+  const z = stealZoneRect();
+  return x >= z.x0 && x <= z.x1 && y >= z.y0 && y <= z.y1;
+}
+
+function positionStealButton(){
+  const z = stealZoneRect();
+  const btn = document.getElementById('steal');
+  btn.style.right = (W - z.x1 + 14) + 'px';
+  btn.style.bottom = (H - z.y1 + 8) + 'px';
 }
 
 function tryKick(){
@@ -704,28 +787,34 @@ function botKick(ball){
   const gy = 6 + Math.random() * 18;   // aim at the goal mouth
   const dx = gx - ball.x, dy = gy - ball.y;
   const d = Math.hypot(dx, dy) || 1;
-  const xy = 170 + Math.random() * 110;
+  const xy = 290 + Math.random() * 130;
   ball.vx = (dx / d) * xy;
   ball.vy = (dy / d) * xy;
-  ball.vz = 45 + Math.random() * 60;
+  ball.vz = 55 + Math.random() * 75;
   ball.spin = (Math.random() - 0.5) * 0.3;
   sKick();
   const p = toScreen(ball.x, ball.y, ball.z);
   spawnParticles(p.x, p.y, 6, 'rgba(255,107,107,.9)');
 }
 
-// Player steal button: steal the ball the opponent is carrying, or win a 50-50.
+// Player steal button / zone: take the ball from the opponent when they have possession.
 function tryPlayerSteal(){
   if (gameState !== 'playing') return;
   const ball = balls.find(b => b.holder === 'opp');
   if (!ball){ showMsg('NO BALL'); return; }
-  const d = Math.hypot(ball.x - player.x, ball.y - player.y);
-  if (d > player.r + opp.r + 48){ showMsg('TOO FAR'); return; }
+  const d = Math.hypot(opp.x - player.x, opp.y - player.y);
+  if (d > stealRadius()){ showMsg('TOO FAR'); return; }
+  const held = ballForPlayer();
+  if (held && held !== ball){
+    held.holder = null; held.state = 'free';
+    held.vx = 0; held.vy = 0; held.vz = 0; held.spin = 0;
+  }
   ball.holder = 'player'; ball.state = 'held';
   ball.stealGrace = 0.3;
   ball.spin = 0; ball.vx = 0; ball.vy = 0; ball.vz = 0;
   drip.armed = true;
-  opp.stealCd = 0.5;                 // brief window before the bot can re-tackle
+  opp.stealCd = 0.5;
+  opp.holdT = 0;
   showMsg('STEAL!');
   if (navigator.vibrate) navigator.vibrate([25, 20, 25]);
 }
@@ -956,7 +1045,7 @@ function updateBall(ball, dt, moveScale){
     const pd = Math.hypot(ball.x - player.x, ball.y - player.y);
     const canGrab = ball.state === 'free' ||
                     (ball.state === 'flight' && ball.z < 6 && Math.hypot(ball.vx, ball.vy) < 170);
-    if (canGrab && pd < player.r + ball.r + 6 && ball.stealGrace <= 0){
+    if (canGrab && pd < player.r + ball.r + 6 && ball.stealGrace <= 0 && !ballForPlayer()){
       ball.state = 'held'; ball.holder = 'player';
       ball.spin = 0;
       drip.armed = true;
@@ -964,7 +1053,7 @@ function updateBall(ball, dt, moveScale){
     }
     // Opponent pickup
     const od = Math.hypot(ball.x - opp.x, ball.y - opp.y);
-    if (canGrab && od < opp.r + ball.r + 4 && ball.stealGrace <= 0 && opp.stealCd <= 0){
+    if (canGrab && od < opp.r + ball.r + 4 && ball.stealGrace <= 0 && opp.stealCd <= 0 && !opp.holdBall()){
       ball.state = 'opp'; ball.holder = 'opp';
       ball.spin = 0;
       opp.stealCd = 0.3;
@@ -1382,6 +1471,24 @@ function draw(){
   {
     ctx.font = '800 10px -apple-system,sans-serif';
     ctx.textAlign = 'right';
+    if (stealAvailable()){
+      const sz = stealZoneRect();
+      const zw = sz.x1 - sz.x0, zh = sz.y1 - sz.y0;
+      const midY = (sz.y0 + sz.y1) / 2;
+      const ready = stealInRange();
+      ctx.fillStyle = ready ? 'rgba(229,72,77,0.18)' : 'rgba(229,72,77,0.08)';
+      ctx.fillRect(sz.x0, sz.y0, zw, zh);
+      ctx.strokeStyle = ready ? 'rgba(229,72,77,0.55)' : 'rgba(229,72,77,0.22)';
+      ctx.lineWidth = ready ? 2 : 1;
+      ctx.strokeRect(sz.x0 + 1, sz.y0 + 1, zw - 2, zh - 2);
+      ctx.textAlign = 'right';
+      ctx.font = '800 13px -apple-system,sans-serif';
+      ctx.fillStyle = ready ? 'rgba(255,210,210,0.95)' : 'rgba(255,210,210,0.45)';
+      ctx.fillText(ready ? 'STEAL BALL' : 'GET CLOSER', sz.x1 - 10, midY - 3);
+      ctx.font = '700 9px -apple-system,sans-serif';
+      ctx.fillStyle = ready ? 'rgba(255,180,180,0.85)' : 'rgba(255,180,180,0.45)';
+      ctx.fillText(ready ? 'TAP TO ROB BOT' : 'MOVE NEAR BOT', sz.x1 - 10, midY + 10);
+    }
     for (const z of kickZoneRects()){
       ctx.fillStyle = 'rgba(' + z.col + ',0.05)';
       ctx.fillRect(z.x0, z.y0, z.x1 - z.x0, z.y1 - z.y0);
@@ -1402,9 +1509,16 @@ function draw(){
     ctx.stroke();
   }
 
-  // Steal button visibility
-  document.getElementById('steal').style.display =
-    (gameState === 'playing' && balls.some(b => b.holder === 'opp')) ? 'block' : 'none';
+  // Steal button visibility (HTML fallback aligned to canvas steal zone).
+  const stealBtn = document.getElementById('steal');
+  stealBtn.style.display = stealAvailable() ? 'block' : 'none';
+  if (stealAvailable()){
+    positionStealButton();
+    const ready = stealInRange();
+    stealBtn.classList.toggle('far', !ready);
+    stealBtn.querySelector('.steal-main').textContent = ready ? 'STEAL BALL' : 'GET CLOSER';
+    stealBtn.querySelector('.steal-sub').textContent = ready ? 'Take from bot' : 'Move near bot';
+  }
 }
 
 // ---------- Loop ----------
